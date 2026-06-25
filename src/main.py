@@ -6,6 +6,7 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 
@@ -39,6 +40,37 @@ app = typer.Typer(
 def version() -> None:
     """Print the installed version and exit."""
     typer.echo(f"ai-track-engineer {__version__}")
+
+
+@app.command()
+def report() -> None:
+    """Print a summary of the most recent recorded session."""
+    settings = get_settings()
+    configure_logging(settings.app.log_level)
+    asyncio.run(_print_latest_report(settings.app.database_path))
+
+
+async def _print_latest_report(database_path: str) -> None:  # pragma: no cover - integration
+    """Load the latest session from SQLite and print its report."""
+    from src.analysis import build_session_report
+
+    async with SqliteStore(database_path) as store:
+        session = await store.latest_session()
+        if session is None:
+            typer.echo("No recorded sessions found.")
+            return
+        laps = await store.laps_for_session(session.id)
+    summary = build_session_report(laps)
+    typer.echo(f"Session on {session.track} ({session.car})")
+    typer.echo(f"  Laps: {summary.valid_laps} valid / {summary.total_laps} total")
+    if summary.best_lap_seconds is not None:
+        typer.echo(f"  Best lap: {summary.best_lap_seconds:.3f}s")
+    if summary.average_lap_ms is not None:
+        typer.echo(f"  Average: {summary.average_lap_ms / 1000:.3f}s")
+    if summary.consistency_stdev_ms is not None:
+        typer.echo(f"  Consistency (stdev): {summary.consistency_stdev_ms / 1000:.3f}s")
+    if summary.theoretical_best_ms is not None:
+        typer.echo(f"  Theoretical best: {summary.theoretical_best_ms / 1000:.3f}s")
 
 
 @app.command()
