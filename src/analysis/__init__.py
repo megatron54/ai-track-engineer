@@ -1,4 +1,9 @@
-"""Analysis layer: lap comparison, pattern detection, tyre/engine monitors."""
+"""Analysis layer: lap comparison and tyre/engine monitors.
+
+The higher-level ``AnalysisPipeline`` (which also uses the AI advisor) lives in
+``src.analysis.pipeline`` and is imported from there directly, so this package
+stays free of an ``src.ai`` dependency.
+"""
 
 from __future__ import annotations
 

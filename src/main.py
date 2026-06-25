@@ -10,16 +10,18 @@ import typer
 from fastapi import FastAPI
 
 from src import __version__
+from src.analysis import EngineMonitor
+from src.analysis.pipeline import AnalysisPipeline
 from src.config import find_ac_install, get_settings
-from src.dashboard import TelemetryHub, capture_to_hub, create_app
+from src.dashboard import TelemetryHub, create_app
+from src.knowledge import TrackInfo, load_track
 from src.observability import configure_logging, get_logger
-from src.processing import LapSegmenter
-from src.processing.models import Lap
 from src.telemetry import (
     MockTelemetrySource,
     SharedMemoryTelemetrySource,
     TelemetrySource,
 )
+from src.telemetry.models import ACStaticInfo
 
 app = typer.Typer(
     name="ai-track-engineer",
@@ -87,25 +89,10 @@ def run(
         MockTelemetrySource() if mock else SharedMemoryTelemetrySource()
     )
     hub = TelemetryHub()
-    segmenter = LapSegmenter()
-    lap_log = get_logger("lap")
-
-    async def on_lap(lap: Lap) -> None:
-        lap_log.info(
-            "lap-completed",
-            number=lap.lap_number,
-            time_ms=lap.lap_time_ms,
-            valid=lap.valid,
-        )
+    lap_log = get_logger("analysis")
 
     async def producer() -> None:
-        await capture_to_hub(
-            source,
-            hub,
-            hz=settings.app.telemetry_poll_hz,
-            segmenter=segmenter,
-            on_lap=on_lap,
-        )
+        await _capture_and_analyze(source, hub, hz=settings.app.telemetry_poll_hz, log=lap_log)
 
     app_instance = create_app(hub, producer=producer)
     log.info(
@@ -124,6 +111,50 @@ def _serve(  # pragma: no cover - integration entry point
     import uvicorn
 
     uvicorn.run(app_instance, host=host, port=port, log_level=log_level.lower())
+
+
+def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - integration
+    """Load track knowledge for the active session, with a safe fallback."""
+    from pathlib import Path
+
+    settings = get_settings()
+    ac_path = find_ac_install(settings.app.ac_install_path)
+    if ac_path is not None and static.track:
+        track_dir = Path(ac_path) / "content" / "tracks" / static.track
+        if track_dir.is_dir():
+            return load_track(track_dir, layout=static.track_configuration or "")
+    label = static.track or "unknown"
+    return TrackInfo(track_id=label, name=label)
+
+
+async def _capture_and_analyze(  # pragma: no cover - integration entry point
+    source: TelemetrySource,
+    hub: TelemetryHub,
+    *,
+    hz: int,
+    log: object,
+) -> None:
+    """Stream telemetry, fan it out, and run the per-lap analysis pipeline."""
+    static = source.connect()
+    track = _load_track_info(static)
+    engine_monitor = EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
+    pipeline = AnalysisPipeline(track, engine_monitor=engine_monitor)
+    bound_log = get_logger("analysis")
+    bound_log.info("session", track=track.name, car=static.car_model, corners=track.corner_count)
+    try:
+        async for frame in source.stream(hz, on_error="skip"):
+            hub.publish(frame)
+            report = pipeline.process(frame)
+            if report is not None:
+                bound_log.info(
+                    "lap-report",
+                    lap=report.lap.lap_number,
+                    time_ms=report.lap.lap_time_ms,
+                    personal_best=report.is_personal_best,
+                    advice=[rec.message for rec in report.recommendations][:3],
+                )
+    finally:
+        source.close()
 
 
 if __name__ == "__main__":  # pragma: no cover
