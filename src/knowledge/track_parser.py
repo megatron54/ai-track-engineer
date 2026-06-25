@@ -16,7 +16,7 @@ import configparser
 import json
 from pathlib import Path
 
-from src.knowledge.models import Corner, TrackInfo
+from src.knowledge.models import Corner, MapProjection, TrackInfo
 
 
 def parse_sections(text: str) -> tuple[Corner, ...]:
@@ -53,6 +53,34 @@ def parse_ui_track(text: str) -> dict[str, object]:
     except json.JSONDecodeError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def parse_map_ini(text: str) -> MapProjection | None:
+    """Parse ``map.ini`` ``[PARAMETERS]`` into a :class:`MapProjection`."""
+    parser = configparser.ConfigParser(
+        strict=False, inline_comment_prefixes=(";", "//")
+    )
+    parser.read_string(text)
+    if not parser.has_section("PARAMETERS"):
+        return None
+    section = "PARAMETERS"
+    try:
+        return MapProjection(
+            width=parser.getfloat(section, "WIDTH"),
+            height=parser.getfloat(section, "HEIGHT"),
+            x_offset=parser.getfloat(section, "X_OFFSET"),
+            z_offset=parser.getfloat(section, "Z_OFFSET"),
+            scale_factor=parser.getfloat(section, "SCALE_FACTOR", fallback=1.0),
+        )
+    except (configparser.NoOptionError, ValueError):
+        return None
+
+
+def map_png_path(track_dir: str | Path, *, layout: str = "") -> Path | None:
+    """Return the path to a track layout's ``map.png``, if it exists."""
+    base = _resolve_layout_dir(Path(track_dir), layout)
+    candidate = base / "map.png"
+    return candidate if candidate.is_file() else None
 
 
 def _length_to_metres(raw: object) -> float:
@@ -104,10 +132,16 @@ def load_track(
         name = str(ui.get("name") or resolved_track_id)
         length_m = _length_to_metres(ui.get("length", 0))
 
+    map_path = base / "data" / "map.ini"
+    projection: MapProjection | None = None
+    if map_path.is_file():
+        projection = parse_map_ini(map_path.read_text(encoding="utf-8", errors="ignore"))
+
     return TrackInfo(
         track_id=resolved_track_id,
         name=name,
         layout=layout,
         length_m=length_m,
         corners=corners,
+        map=projection,
     )
