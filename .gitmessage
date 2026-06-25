@@ -1,0 +1,10 @@
+# <type>(<scope>): <subject>
+#
+# Types: feat, fix, docs, style, refactor, test, chore, perf, ci, revert
+# Scope: telemetry, processing, knowledge, analysis, ml, ai, voice,
+#        strategy, setup-lab, storage, dashboard, frontend, ci, deps
+# Subject: imperative mood, no trailing period, max ~72 chars
+#
+# Body (optional): explain WHAT and WHY, not HOW. Wrap at 72 chars.
+#
+# Footer (optional): "Closes #123", "BREAKING CHANGE: ..."

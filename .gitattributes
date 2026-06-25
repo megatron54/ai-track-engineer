@@ -1,0 +1,22 @@
+# Normalize line endings: treat as text and check out with LF by default.
+* text=auto eol=lf
+
+# Windows-specific scripts keep CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary assets (never normalize).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.kn5 binary
+*.acd binary
+*.ai binary
+*.bin binary
+*.joblib binary
+*.onnx binary
+*.woff binary
+*.woff2 binary
