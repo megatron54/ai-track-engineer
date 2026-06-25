@@ -15,8 +15,8 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 
 | Phase | Capability | Status |
 |-------|------------|--------|
-| 1 | Live telemetry capture (60 Hz) + web dashboard | 🚧 In progress |
-| 2 | Per-corner analysis + lap comparison | ⏳ Planned |
+| 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Backend done (React UI pending) |
+| 2 | Per-corner analysis + lap comparison | 🚧 In progress |
 | 3 | Natural-language coaching (local LLM via Ollama) | ⏳ Planned |
 | 4 | Real-time in-corner feedback | ⏳ Planned |
 | 5 | Pattern detection + session reports | ⏳ Planned |
@@ -52,10 +52,14 @@ uv sync
 cp .env.example .env
 
 # 3. Run with simulated telemetry (no Assetto Corsa required)
-uv run python -m src.main --mock
+uv run python -m src.main run --mock
 
 # 4. Run against a live Assetto Corsa session
-uv run python -m src.main
+uv run python -m src.main run
+
+# Then open the live dashboard at http://127.0.0.1:8000
+# Check your environment (Assetto Corsa, services):
+uv run python -m src.main doctor
 ```
 
 > **Assetto Corsa path:** the app auto-detects the default Steam location.
