@@ -47,6 +47,7 @@ class AppSettings(BaseModel):
     telemetry_poll_hz: int = 60
     dashboard_stream_hz: int = 30
     ac_install_path: str | None = None
+    database_path: str = "data/ai-track-engineer.db"
 
 
 class Settings(BaseSettings):
