@@ -107,3 +107,25 @@ async def test_run_session_publishes_ai_advice_events() -> None:
     advice = [m for m in _drain(queue) if m["type"] == "advice"]
     assert len(advice) >= 2
     assert advice[0]["messages"] == ["[Turn 1] Brake 5m later -> +0.2s"]
+
+
+async def test_run_session_persists_laps_to_store() -> None:
+    from src.storage.sqlite_client import SqliteStore
+
+    store = SqliteStore(":memory:")
+    await store.connect()
+    session = await store.create_session(track="ks_laguna_seca", car="c", started_at=0.0)
+    source = MockTelemetrySource(dt=0.05, lap_time_s=1.0)
+    static = source.connect()
+    hub = TelemetryHub(queue_size=5000)
+    state = DashboardState()
+
+    await run_session(
+        source, hub, state, _TRACK, static, hz=4000, max_frames=80,
+        store=store, session_id=session.id,
+    )
+
+    laps = await store.laps_for_session(session.id)
+    await store.close()
+    assert len(laps) >= 2
+    assert all(lap.lap_number > 0 for lap in laps)

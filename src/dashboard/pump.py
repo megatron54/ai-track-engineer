@@ -17,6 +17,7 @@ from src.dashboard.hub import TelemetryHub
 from src.dashboard.serialization import lap_event, session_event, telemetry_event
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
+from src.storage.sqlite_client import SqliteStore
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.source import TelemetrySource
 
@@ -51,6 +52,8 @@ async def run_session(
     hz: int,
     advisor: RaceEngineerAdvisor | None = None,
     engine_monitor: EngineMonitor | None = None,
+    store: SqliteStore | None = None,
+    session_id: str | None = None,
     max_frames: int | None = None,
     telemetry_every: int = 1,
 ) -> int:
@@ -67,6 +70,8 @@ async def run_session(
             non-blocking task that publishes an ``advice`` event (LLM coaching
             with heuristic fallback) without stalling the telemetry stream.
         engine_monitor: Optional engine monitor for over-rev alerts.
+        store: Optional SQLite store; completed laps are persisted to it.
+        session_id: Session id under which laps are recorded (with ``store``).
         max_frames: Optional cap (mainly for tests).
         telemetry_every: Publish a telemetry event every Nth frame (throttling).
 
@@ -91,6 +96,8 @@ async def run_session(
                 hub.publish(telemetry_event(frame, delta=pipeline.live_delta(frame)))
             if report is not None:
                 hub.publish(lap_event(report))
+                if store is not None and session_id is not None:
+                    await store.record_lap(session_id, report.lap)
                 if advisor is not None:
                     task = asyncio.create_task(_publish_ai_advice(advisor, report, track, hub))
                     advice_tasks.add(task)

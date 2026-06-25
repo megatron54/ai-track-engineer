@@ -6,6 +6,7 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import typer
@@ -18,6 +19,7 @@ from src.config import find_ac_install, get_settings
 from src.dashboard import DashboardState, TelemetryHub, create_app, run_session
 from src.knowledge import TrackInfo, load_track, map_png_path
 from src.observability import configure_logging, get_logger
+from src.storage import SqliteStore
 from src.telemetry import (
     MockTelemetrySource,
     SharedMemoryTelemetrySource,
@@ -151,16 +153,37 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
     engine_monitor = EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
     settings = get_settings()
     advisor = RaceEngineerAdvisor(OllamaClient.from_settings(settings.ollama))
-    get_logger("analysis").info(
-        "session",
-        track=track.name,
-        car=static.car_model,
-        corners=track.corner_count,
-        ai_model=settings.ollama.model,
-    )
-    await run_session(
-        source, hub, state, track, static, hz=hz, advisor=advisor, engine_monitor=engine_monitor
-    )
+    log = get_logger("analysis")
+
+    db_path = Path(settings.app.database_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    async with SqliteStore(str(db_path)) as store:
+        session = await store.create_session(
+            track=track.track_id,
+            car=static.car_model,
+            started_at=time.time(),
+            track_config=static.track_configuration or "",
+        )
+        log.info(
+            "session",
+            track=track.name,
+            car=static.car_model,
+            corners=track.corner_count,
+            ai_model=settings.ollama.model,
+            session_id=session.id,
+        )
+        await run_session(
+            source,
+            hub,
+            state,
+            track,
+            static,
+            hz=hz,
+            advisor=advisor,
+            engine_monitor=engine_monitor,
+            store=store,
+            session_id=session.id,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover
