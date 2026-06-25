@@ -1,0 +1,44 @@
+name: Bug report
+description: Report a problem with AI-TrackEngineer
+labels: [bug]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run `uv run python -m src.main ...`
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Telemetry mode
+      options:
+        - Mock (no Assetto Corsa)
+        - Live (Assetto Corsa running)
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, AI-TrackEngineer version (`... version`).
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Paste logs. Do NOT include tokens or secrets.
+      render: shell
+    validations:
+      required: false

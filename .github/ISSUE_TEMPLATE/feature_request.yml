@@ -1,0 +1,34 @@
+name: Feature request
+description: Suggest an idea or enhancement
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What problem would this solve? Who benefits?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+    validations:
+      required: true
+  - type: dropdown
+    id: phase
+    attributes:
+      label: Related phase
+      options:
+        - "Phase 1 - Foundation"
+        - "Phase 2 - Analysis"
+        - "Phase 3 - AI"
+        - "Phase 4 - Real-time feedback"
+        - "Phase 5 - Advanced analysis"
+        - "Phase 6 - Voice"
+        - "Phase 7 - ML"
+        - "Phase 8 - Strategy"
+        - "Phase 9 - Setup Lab"
+        - "Cross-cutting / tooling"
+    validations:
+      required: false
