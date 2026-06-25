@@ -6,13 +6,15 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
-import asyncio
-
 import typer
+from fastapi import FastAPI
 
 from src import __version__
 from src.config import find_ac_install, get_settings
+from src.dashboard import TelemetryHub, capture_to_hub, create_app
 from src.observability import configure_logging, get_logger
+from src.processing import LapSegmenter
+from src.processing.models import Lap
 from src.telemetry import (
     MockTelemetrySource,
     SharedMemoryTelemetrySource,
@@ -65,16 +67,14 @@ def run(
     voice: bool = typer.Option(
         False, "--voice", help="Enable the bidirectional voice assistant."
     ),
-    seconds: float = typer.Option(
-        3.0, "--seconds", min=0.0, help="How long to stream a telemetry preview."
-    ),
+    host: str = typer.Option("127.0.0.1", "--host", help="Dashboard bind address."),
+    port: int = typer.Option(8000, "--port", help="Dashboard port."),
 ) -> None:
-    """Start the engineer (telemetry loop, dashboard, optional voice).
+    """Start the engineer: capture telemetry and serve the live dashboard.
 
-    The full pipeline is implemented incrementally across phases. This command
-    currently connects a telemetry source and streams a short preview to the
-    log so the capture path can be exercised end to end (with ``--mock`` it
-    needs no running game).
+    Connects a telemetry source (live or ``--mock``), fans frames out to the web
+    dashboard, and segments laps. Open http://HOST:PORT to view live telemetry.
+    Press Ctrl+C to stop.
     """
     settings = get_settings()
     configure_logging(settings.app.log_level)
@@ -86,39 +86,44 @@ def run(
     source: TelemetrySource = (
         MockTelemetrySource() if mock else SharedMemoryTelemetrySource()
     )
-    log.info("startup", mode="mock" if mock else "live", poll_hz=settings.app.telemetry_poll_hz)
-    frames = asyncio.run(
-        _preview_stream(source, hz=settings.app.telemetry_poll_hz, seconds=seconds)
+    hub = TelemetryHub()
+    segmenter = LapSegmenter()
+    lap_log = get_logger("lap")
+
+    async def on_lap(lap: Lap) -> None:
+        lap_log.info(
+            "lap-completed",
+            number=lap.lap_number,
+            time_ms=lap.lap_time_ms,
+            valid=lap.valid,
+        )
+
+    async def producer() -> None:
+        await capture_to_hub(
+            source,
+            hub,
+            hz=settings.app.telemetry_poll_hz,
+            segmenter=segmenter,
+            on_lap=on_lap,
+        )
+
+    app_instance = create_app(hub, producer=producer)
+    log.info(
+        "startup",
+        mode="mock" if mock else "live",
+        dashboard=f"http://{host}:{port}",
+        poll_hz=settings.app.telemetry_poll_hz,
     )
-    typer.echo(f"Streamed {frames} telemetry frames ({'mock' if mock else 'live'} source).")
+    _serve(app_instance, host=host, port=port, log_level=settings.app.log_level)
 
 
-async def _preview_stream(source: TelemetrySource, *, hz: int, seconds: float) -> int:
-    """Stream telemetry for a fixed duration, logging a periodic summary.
+def _serve(  # pragma: no cover - integration entry point
+    app_instance: FastAPI, *, host: str, port: int, log_level: str
+) -> None:
+    """Run the ASGI app with uvicorn (integration entry point)."""
+    import uvicorn
 
-    Returns the number of frames streamed. Connection and cleanup are always
-    paired so the source is released even if streaming fails.
-    """
-    log = get_logger("telemetry")
-    max_frames = int(hz * seconds)
-    count = 0
-    try:
-        static_info = source.connect()
-        log.info("connected", track=static_info.track, car=static_info.car_model)
-        async for frame in source.stream(hz, max_frames=max_frames):
-            count += 1
-            if count % hz == 0:  # roughly once per second
-                physics = frame.physics
-                log.info(
-                    "telemetry",
-                    lap_pos=round(frame.graphics.normalized_car_position, 3),
-                    speed_kmh=round(physics.speed_kmh, 1),
-                    rpm=physics.rpm,
-                    gear=physics.gear_label,
-                )
-    finally:
-        source.close()
-    return count
+    uvicorn.run(app_instance, host=host, port=port, log_level=log_level.lower())
 
 
 if __name__ == "__main__":  # pragma: no cover
