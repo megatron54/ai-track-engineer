@@ -6,11 +6,18 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
+import asyncio
+
 import typer
 
 from src import __version__
 from src.config import find_ac_install, get_settings
 from src.observability import configure_logging, get_logger
+from src.telemetry import (
+    MockTelemetrySource,
+    SharedMemoryTelemetrySource,
+    TelemetrySource,
+)
 
 app = typer.Typer(
     name="ai-track-engineer",
@@ -58,25 +65,60 @@ def run(
     voice: bool = typer.Option(
         False, "--voice", help="Enable the bidirectional voice assistant."
     ),
+    seconds: float = typer.Option(
+        3.0, "--seconds", min=0.0, help="How long to stream a telemetry preview."
+    ),
 ) -> None:
     """Start the engineer (telemetry loop, dashboard, optional voice).
 
-    The full pipeline is implemented incrementally across phases; this command
-    currently validates configuration and reports the selected mode.
+    The full pipeline is implemented incrementally across phases. This command
+    currently connects a telemetry source and streams a short preview to the
+    log so the capture path can be exercised end to end (with ``--mock`` it
+    needs no running game).
     """
     settings = get_settings()
     configure_logging(settings.app.log_level)
     log = get_logger("run")
-    log.info(
-        "startup",
-        mode="mock" if mock else "live",
-        voice=voice,
-        poll_hz=settings.app.telemetry_poll_hz,
+
+    if voice:
+        log.warning("voice-not-implemented", note="voice arrives in Phase 6")
+
+    source: TelemetrySource = (
+        MockTelemetrySource() if mock else SharedMemoryTelemetrySource()
     )
-    typer.echo(
-        "Telemetry pipeline is not implemented yet (arriving in Phase 1). "
-        f"Selected mode: {'mock' if mock else 'live'}, voice={'on' if voice else 'off'}."
+    log.info("startup", mode="mock" if mock else "live", poll_hz=settings.app.telemetry_poll_hz)
+    frames = asyncio.run(
+        _preview_stream(source, hz=settings.app.telemetry_poll_hz, seconds=seconds)
     )
+    typer.echo(f"Streamed {frames} telemetry frames ({'mock' if mock else 'live'} source).")
+
+
+async def _preview_stream(source: TelemetrySource, *, hz: int, seconds: float) -> int:
+    """Stream telemetry for a fixed duration, logging a periodic summary.
+
+    Returns the number of frames streamed. Connection and cleanup are always
+    paired so the source is released even if streaming fails.
+    """
+    log = get_logger("telemetry")
+    max_frames = int(hz * seconds)
+    count = 0
+    try:
+        static_info = source.connect()
+        log.info("connected", track=static_info.track, car=static_info.car_model)
+        async for frame in source.stream(hz, max_frames=max_frames):
+            count += 1
+            if count % hz == 0:  # roughly once per second
+                physics = frame.physics
+                log.info(
+                    "telemetry",
+                    lap_pos=round(frame.graphics.normalized_car_position, 3),
+                    speed_kmh=round(physics.speed_kmh, 1),
+                    rpm=physics.rpm,
+                    gear=physics.gear_label,
+                )
+    finally:
+        source.close()
+    return count
 
 
 if __name__ == "__main__":  # pragma: no cover

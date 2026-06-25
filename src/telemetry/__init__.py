@@ -8,6 +8,7 @@ ctypes layout lives in :mod:`src.telemetry.shm_structs`.
 from __future__ import annotations
 
 from src.telemetry.converters import frame_from_structs
+from src.telemetry.mock import MockTelemetrySource
 from src.telemetry.models import (
     ACGraphics,
     ACPhysics,
@@ -15,7 +16,13 @@ from src.telemetry.models import (
     TelemetryFrame,
     Wheels,
 )
+from src.telemetry.shm_reader import SharedMemoryTelemetrySource
 from src.telemetry.shm_structs import ACFlagType, ACSessionType, ACStatus
+from src.telemetry.source import (
+    SourceNotConnectedError,
+    TelemetrySource,
+    TelemetrySourceError,
+)
 
 __all__ = [
     "ACFlagType",
@@ -24,7 +31,12 @@ __all__ = [
     "ACSessionType",
     "ACStaticInfo",
     "ACStatus",
+    "MockTelemetrySource",
+    "SharedMemoryTelemetrySource",
+    "SourceNotConnectedError",
     "TelemetryFrame",
+    "TelemetrySource",
+    "TelemetrySourceError",
     "Wheels",
     "frame_from_structs",
 ]

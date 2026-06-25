@@ -8,6 +8,8 @@ unit-test with in-memory structures.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from src.telemetry.models import (
     ACGraphics,
     ACPhysics,
@@ -25,9 +27,9 @@ from src.telemetry.shm_structs import (
 )
 
 
-def _vec3(array: object) -> tuple[float, float, float]:
+def _vec3(array: Iterable[float]) -> tuple[float, float, float]:
     """Coerce a ``c_float * 3`` ctypes array into a float 3-tuple."""
-    x, y, z = list(array)  # type: ignore[call-overload]
+    x, y, z = list(array)
     return (float(x), float(y), float(z))
 
 
