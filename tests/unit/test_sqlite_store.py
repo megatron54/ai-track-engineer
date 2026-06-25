@@ -80,3 +80,16 @@ async def test_context_manager_connects_and_closes() -> None:
     async with SqliteStore(":memory:") as store:
         session = await store.create_session(track="t", car="c", started_at=0.0)
         assert await store.get_session(session.id) is not None
+
+
+async def test_latest_session_returns_most_recent(store: SqliteStore) -> None:
+    await store.create_session(track="t1", car="c", started_at=100.0)
+    newest = await store.create_session(track="t2", car="c", started_at=200.0)
+    latest = await store.latest_session()
+    assert latest is not None
+    assert latest.id == newest.id
+    assert latest.track == "t2"
+
+
+async def test_latest_session_none_when_empty(store: SqliteStore) -> None:
+    assert await store.latest_session() is None
