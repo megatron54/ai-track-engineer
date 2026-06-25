@@ -76,6 +76,24 @@ class AnalysisPipeline:
         self._buffer = [frame]
         return report
 
+    def live_delta(self, frame: TelemetryFrame) -> float | None:
+        """Real-time delta vs the personal-best lap at the car's position.
+
+        Returns the current lap's elapsed time minus the best lap's time at the
+        same normalised track position: positive means losing time, negative
+        means gaining. ``None`` until a best lap exists.
+        """
+        if self._best_trace is None:
+            return None
+        position = frame.graphics.normalized_car_position
+        elapsed = frame.graphics.current_time_ms / 1000.0
+        return elapsed - self._best_trace.time_at(position)
+
+    @property
+    def has_reference_lap(self) -> bool:
+        """Whether a best lap is available to compare against."""
+        return self._best_trace is not None
+
     def _build_report(self, lap: Lap, frames: list[TelemetryFrame]) -> LapReport:
         trace = self._build_trace(lap, frames)
         is_pb = self._is_personal_best(lap)
