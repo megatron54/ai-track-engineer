@@ -1,0 +1,53 @@
+# Local development infrastructure for AI-TrackEngineer.
+#
+# Secrets below are LOCAL-DEVELOPMENT-ONLY defaults, overridable via .env.
+# Never reuse these values in any shared or production environment.
+
+services:
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_INIT_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_INIT_PASSWORD:-changeme-local-dev}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB__ORG:-ai-track-engineer}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB__BUCKET:-telemetry}
+      DOCKER_INFLUXDB_INIT_RETENTION: 90d
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB__TOKEN:-changeme-local-dev-token}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Optional: run Ollama in a container. A native Ollama install also works
+  # (point OLLAMA__URL at it). Enable this service with:
+  #   docker compose --profile ollama up -d
+  # For NVIDIA GPU acceleration, uncomment the `deploy` block (requires the
+  # NVIDIA Container Toolkit).
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    profiles: [ollama]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+volumes:
+  influxdb-data:
+  influxdb-config:
+  ollama-data:

@@ -1,0 +1,20 @@
+# AI-TrackEngineer — non-secret default configuration.
+# Secrets (e.g. InfluxDB tokens) must come from the environment / .env, never
+# from this versioned file. Values here can be overridden by environment
+# variables using a double-underscore delimiter, e.g. APP__LOG_LEVEL=DEBUG.
+
+app:
+  log_level: INFO
+  telemetry_poll_hz: 60      # Shared-memory polling rate (Hz). Non-negotiable 60.
+  dashboard_stream_hz: 30    # WebSocket push rate to the frontend (Hz).
+  ac_install_path: null      # null => auto-detect the Steam installation.
+
+influxdb:
+  url: http://localhost:8086
+  org: ai-track-engineer
+  bucket: telemetry
+  # token: provided via INFLUXDB__TOKEN env var only.
+
+ollama:
+  url: http://localhost:11434
+  model: mistral
