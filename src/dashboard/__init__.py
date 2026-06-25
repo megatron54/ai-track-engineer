@@ -1,10 +1,19 @@
-"""Web dashboard: FastAPI app, telemetry hub, fan-out and capture orchestration."""
+"""Web dashboard: FastAPI app, fan-out hub, session state and orchestration."""
 
 from __future__ import annotations
 
 from src.dashboard.api import create_app
 from src.dashboard.hub import TelemetryHub
-from src.dashboard.pump import capture_to_hub
-from src.dashboard.serialization import frame_to_payload
+from src.dashboard.pump import run_session
+from src.dashboard.serialization import lap_event, session_event, telemetry_event
+from src.dashboard.state import DashboardState
 
-__all__ = ["TelemetryHub", "capture_to_hub", "create_app", "frame_to_payload"]
+__all__ = [
+    "DashboardState",
+    "TelemetryHub",
+    "create_app",
+    "lap_event",
+    "run_session",
+    "session_event",
+    "telemetry_event",
+]

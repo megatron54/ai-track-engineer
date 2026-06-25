@@ -8,6 +8,7 @@ app:
   telemetry_poll_hz: 60      # Shared-memory polling rate (Hz). Non-negotiable 60.
   dashboard_stream_hz: 30    # WebSocket push rate to the frontend (Hz).
   ac_install_path: null      # null => auto-detect the Steam installation.
+  database_path: data/ai-track-engineer.db  # SQLite metadata store.
 
 influxdb:
   url: http://localhost:8086

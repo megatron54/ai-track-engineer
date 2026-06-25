@@ -133,6 +133,24 @@ class SqliteStore:
             car=row["car"],
         )
 
+    async def latest_session(self) -> Session | None:
+        """Return the most recently started session, or ``None`` if none exist."""
+        db = self._require_db()
+        async with db.execute(
+            "SELECT id, started_at, track, track_config, car "
+            "FROM sessions ORDER BY started_at DESC LIMIT 1"
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None:
+            return None
+        return Session(
+            id=row["id"],
+            started_at=row["started_at"],
+            track=row["track"],
+            track_config=row["track_config"],
+            car=row["car"],
+        )
+
     # -- Context manager + helpers ----------------------------------------
     async def __aenter__(self) -> SqliteStore:
         await self.connect()

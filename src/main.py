@@ -6,16 +6,21 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
+import asyncio
+import time
+from pathlib import Path
+
 import typer
 from fastapi import FastAPI
 
 from src import __version__
+from src.ai import OllamaClient, RaceEngineerAdvisor
 from src.analysis import EngineMonitor
-from src.analysis.pipeline import AnalysisPipeline
 from src.config import find_ac_install, get_settings
-from src.dashboard import TelemetryHub, create_app
-from src.knowledge import TrackInfo, load_track
+from src.dashboard import DashboardState, TelemetryHub, create_app, run_session
+from src.knowledge import TrackInfo, load_track, map_png_path
 from src.observability import configure_logging, get_logger
+from src.storage import SqliteStore
 from src.telemetry import (
     MockTelemetrySource,
     SharedMemoryTelemetrySource,
@@ -35,6 +40,37 @@ app = typer.Typer(
 def version() -> None:
     """Print the installed version and exit."""
     typer.echo(f"ai-track-engineer {__version__}")
+
+
+@app.command()
+def report() -> None:
+    """Print a summary of the most recent recorded session."""
+    settings = get_settings()
+    configure_logging(settings.app.log_level)
+    asyncio.run(_print_latest_report(settings.app.database_path))
+
+
+async def _print_latest_report(database_path: str) -> None:  # pragma: no cover - integration
+    """Load the latest session from SQLite and print its report."""
+    from src.analysis import build_session_report
+
+    async with SqliteStore(database_path) as store:
+        session = await store.latest_session()
+        if session is None:
+            typer.echo("No recorded sessions found.")
+            return
+        laps = await store.laps_for_session(session.id)
+    summary = build_session_report(laps)
+    typer.echo(f"Session on {session.track} ({session.car})")
+    typer.echo(f"  Laps: {summary.valid_laps} valid / {summary.total_laps} total")
+    if summary.best_lap_seconds is not None:
+        typer.echo(f"  Best lap: {summary.best_lap_seconds:.3f}s")
+    if summary.average_lap_ms is not None:
+        typer.echo(f"  Average: {summary.average_lap_ms / 1000:.3f}s")
+    if summary.consistency_stdev_ms is not None:
+        typer.echo(f"  Consistency (stdev): {summary.consistency_stdev_ms / 1000:.3f}s")
+    if summary.theoretical_best_ms is not None:
+        typer.echo(f"  Theoretical best: {summary.theoretical_best_ms / 1000:.3f}s")
 
 
 @app.command()
@@ -89,12 +125,12 @@ def run(
         MockTelemetrySource() if mock else SharedMemoryTelemetrySource()
     )
     hub = TelemetryHub()
-    lap_log = get_logger("analysis")
+    state = DashboardState()
 
     async def producer() -> None:
-        await _capture_and_analyze(source, hub, hz=settings.app.telemetry_poll_hz, log=lap_log)
+        await _capture_and_analyze(source, hub, state, hz=settings.app.telemetry_poll_hz)
 
-    app_instance = create_app(hub, producer=producer)
+    app_instance = create_app(hub, state, producer=producer)
     log.info(
         "startup",
         mode="mock" if mock else "live",
@@ -113,16 +149,22 @@ def _serve(  # pragma: no cover - integration entry point
     uvicorn.run(app_instance, host=host, port=port, log_level=log_level.lower())
 
 
-def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - integration
-    """Load track knowledge for the active session, with a safe fallback."""
-    from pathlib import Path
-
+def _track_dir_for(static: ACStaticInfo) -> Path | None:  # pragma: no cover - integration
+    """Resolve the Assetto Corsa content directory for the active track."""
     settings = get_settings()
     ac_path = find_ac_install(settings.app.ac_install_path)
     if ac_path is not None and static.track:
         track_dir = Path(ac_path) / "content" / "tracks" / static.track
         if track_dir.is_dir():
-            return load_track(track_dir, layout=static.track_configuration or "")
+            return track_dir
+    return None
+
+
+def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - integration
+    """Load track knowledge for the active session, with a safe fallback."""
+    track_dir = _track_dir_for(static)
+    if track_dir is not None:
+        return load_track(track_dir, layout=static.track_configuration or "")
     label = static.track or "unknown"
     return TrackInfo(track_id=label, name=label)
 
@@ -130,31 +172,50 @@ def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - i
 async def _capture_and_analyze(  # pragma: no cover - integration entry point
     source: TelemetrySource,
     hub: TelemetryHub,
+    state: DashboardState,
     *,
     hz: int,
-    log: object,
 ) -> None:
-    """Stream telemetry, fan it out, and run the per-lap analysis pipeline."""
+    """Connect, load track + map, and stream the session's events to the hub."""
     static = source.connect()
     track = _load_track_info(static)
+    track_dir = _track_dir_for(static)
+    if track_dir is not None:
+        state.set_map_png(map_png_path(track_dir, layout=static.track_configuration or ""))
     engine_monitor = EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
-    pipeline = AnalysisPipeline(track, engine_monitor=engine_monitor)
-    bound_log = get_logger("analysis")
-    bound_log.info("session", track=track.name, car=static.car_model, corners=track.corner_count)
-    try:
-        async for frame in source.stream(hz, on_error="skip"):
-            hub.publish(frame)
-            report = pipeline.process(frame)
-            if report is not None:
-                bound_log.info(
-                    "lap-report",
-                    lap=report.lap.lap_number,
-                    time_ms=report.lap.lap_time_ms,
-                    personal_best=report.is_personal_best,
-                    advice=[rec.message for rec in report.recommendations][:3],
-                )
-    finally:
-        source.close()
+    settings = get_settings()
+    advisor = RaceEngineerAdvisor(OllamaClient.from_settings(settings.ollama))
+    log = get_logger("analysis")
+
+    db_path = Path(settings.app.database_path)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    async with SqliteStore(str(db_path)) as store:
+        session = await store.create_session(
+            track=track.track_id,
+            car=static.car_model,
+            started_at=time.time(),
+            track_config=static.track_configuration or "",
+        )
+        log.info(
+            "session",
+            track=track.name,
+            car=static.car_model,
+            corners=track.corner_count,
+            ai_model=settings.ollama.model,
+            session_id=session.id,
+        )
+        await run_session(
+            source,
+            hub,
+            state,
+            track,
+            static,
+            hz=hz,
+            advisor=advisor,
+            engine_monitor=engine_monitor,
+            store=store,
+            session_id=session.id,
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

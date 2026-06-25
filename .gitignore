@@ -60,6 +60,8 @@ src/ml/models/*.onnx
 # ---- Captured telemetry / local data ----
 data/sessions/
 data/exports/
+data/*.db
+*.db
 *.influx-dump
 
 # ---- Frontend (Node) ----

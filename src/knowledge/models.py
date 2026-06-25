@@ -29,6 +29,30 @@ class Corner(BaseModel):
         return position >= self.entry or position < self.exit
 
 
+class MapProjection(BaseModel):
+    """World-to-pixel projection for an Assetto Corsa track minimap.
+
+    Maps a car's world ``(x, z)`` coordinates onto the track's ``map.png`` image
+    using the parameters from ``data/map.ini``. The image is ``width`` x
+    ``height`` pixels (origin top-left).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    width: float
+    height: float
+    x_offset: float
+    z_offset: float
+    scale_factor: float = 1.0
+
+    def to_pixel(self, x: float, z: float) -> tuple[float, float]:
+        """Project world ``(x, z)`` coordinates to map pixel ``(px, py)``."""
+        return (
+            (x + self.x_offset) * self.scale_factor,
+            (z + self.z_offset) * self.scale_factor,
+        )
+
+
 class TrackInfo(BaseModel):
     """Static knowledge about a track layout."""
 
@@ -39,6 +63,7 @@ class TrackInfo(BaseModel):
     layout: str = ""
     length_m: float = 0.0
     corners: tuple[Corner, ...] = ()
+    map: MapProjection | None = None
 
     @property
     def corner_count(self) -> int:

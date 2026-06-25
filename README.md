@@ -15,15 +15,15 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 
 | Phase | Capability | Status |
 |-------|------------|--------|
-| 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Backend done (React UI pending) |
+| 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Done (live map + timing UI; React optional) |
 | 2 | Per-corner analysis + lap comparison + tyre/engine monitors | ✅ Done |
 | 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done |
-| 4 | Real-time in-corner feedback | ⏳ Planned |
-| 5 | Pattern detection + session reports | ⏳ Planned |
+| 4 | Real-time in-corner feedback | 🚧 Live delta vs best |
+| 5 | Pattern detection + session reports | ✅ Session reports (patterns pending) |
 | 6 | Bidirectional voice assistant | ⏳ Planned |
 | 7 | Predictive ML models | ⏳ Planned |
-| 8 | Race strategist (fuel, pit, tyres) | ⏳ Planned |
-| 9 | Physics-based Setup Lab (digital twin) | ⏳ Planned |
+| 8 | Race strategist (fuel, pit, tyres) | 🚧 Fuel + session detection |
+| 9 | Physics-based Setup Lab (digital twin) | 🚧 Power/LUT parsing (packed `.acd` cars pending) |
 
 ## Tech stack
 
