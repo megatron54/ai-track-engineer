@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
 from src import __version__
+from src import main as main_module
 from src.main import app
 from src.observability import get_logger
 from src.observability import logging as logging_module
@@ -22,10 +24,19 @@ def test_doctor_command_runs() -> None:
     assert result.exit_code == 0
 
 
-def test_run_command_mock_mode() -> None:
-    result = runner.invoke(app, ["run", "--mock"])
+def test_run_command_mock_mode(monkeypatch: pytest.MonkeyPatch) -> None:
+    # ``run`` would start a blocking web server; patch the server entry point so
+    # we test the wiring (source + dashboard) without actually serving.
+    captured: dict[str, object] = {}
+
+    def fake_serve(app_instance: object, *, host: str, port: int, log_level: str) -> None:
+        captured["host"] = host
+        captured["port"] = port
+
+    monkeypatch.setattr(main_module, "_serve", fake_serve)
+    result = runner.invoke(app, ["run", "--mock", "--port", "9123"])
     assert result.exit_code == 0
-    assert "mock" in result.stdout.lower()
+    assert captured["port"] == 9123
 
 
 def test_no_args_shows_help() -> None:

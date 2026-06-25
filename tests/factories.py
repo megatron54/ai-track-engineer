@@ -119,18 +119,19 @@ def make_frame(
     timestamp: float = 0.0,
     status: ACStatus = ACStatus.LIVE,
     normalized_car_position: float = 0.5,
+    graphics: ACGraphics | None = None,
     **physics_overrides: Any,
 ) -> TelemetryFrame:
     """Build a :class:`TelemetryFrame` for tests.
 
     Common knobs (``status``, ``normalized_car_position``) are surfaced
-    directly; any remaining keyword arguments override physics fields.
+    directly; pass a fully-built ``graphics`` to control session/lap fields.
+    Any remaining keyword arguments override physics fields.
     """
     return TelemetryFrame(
         timestamp=timestamp,
         physics=make_physics(**physics_overrides),
-        graphics=make_graphics(
-            status=status, normalized_car_position=normalized_car_position
-        ),
+        graphics=graphics
+        or make_graphics(status=status, normalized_car_position=normalized_car_position),
         static_info=make_static(),
     )
