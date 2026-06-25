@@ -12,8 +12,12 @@ import abc
 import asyncio
 import time
 from collections.abc import AsyncIterator
+from typing import Literal
 
+from src.observability import get_logger
 from src.telemetry.models import ACStaticInfo, TelemetryFrame
+
+_log = get_logger("telemetry.source")
 
 
 class TelemetrySourceError(RuntimeError):
@@ -45,19 +49,29 @@ class TelemetrySource(abc.ABC):
         """Release any resources held by the source. Must be idempotent."""
 
     async def stream(
-        self, hz: int, *, max_frames: int | None = None
+        self,
+        hz: int,
+        *,
+        max_frames: int | None = None,
+        on_error: Literal["raise", "skip"] = "raise",
     ) -> AsyncIterator[TelemetryFrame]:
         """Yield frames at a fixed rate using a drift-corrected scheduler.
 
         Args:
             hz: Target sampling rate in frames per second (must be > 0).
-            max_frames: Optional cap on the number of frames to yield; ``None``
+            max_frames: Optional cap on the number of frames yielded; ``None``
                 streams indefinitely.
+            on_error: How to handle a :class:`TelemetrySourceError` from
+                :meth:`read_frame`. ``"raise"`` (default) propagates it;
+                ``"skip"`` logs the error and continues to the next tick — useful
+                for long unattended sessions that must survive a transient bad
+                read without tearing down the loop.
 
         Yields:
             Telemetry frames spaced as close to ``1/hz`` seconds apart as the
             host allows. If a read falls behind schedule the clock resynchronises
-            instead of bursting to catch up.
+            instead of bursting to catch up. Skipped frames (on read errors) do
+            not count towards ``max_frames``.
         """
         if hz <= 0:
             raise ValueError(f"hz must be positive, got {hz}")
@@ -66,10 +80,15 @@ class TelemetrySource(abc.ABC):
         next_tick = time.perf_counter()
         emitted = 0
         while max_frames is None or emitted < max_frames:
-            yield self.read_frame()
-            emitted += 1
-            if max_frames is not None and emitted >= max_frames:
-                break
+            try:
+                frame = self.read_frame()
+            except TelemetrySourceError:
+                if on_error == "raise":
+                    raise
+                _log.warning("telemetry-read-failed", action="skip", exc_info=True)
+            else:
+                emitted += 1
+                yield frame
             next_tick += period
             delay = next_tick - time.perf_counter()
             if delay > 0:

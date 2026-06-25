@@ -23,6 +23,18 @@ from src.telemetry.shm_structs import (
 from src.telemetry.source import SourceNotConnectedError, TelemetrySourceError
 
 
+class _TrackingBuffer(io.BytesIO):
+    """A BytesIO that records whether it was closed."""
+
+    def __init__(self, data: bytes) -> None:
+        super().__init__(data)
+        self.was_closed = False
+
+    def close(self) -> None:
+        self.was_closed = True
+        super().close()
+
+
 class _FakeMaps:
     """An opener backed by in-memory copies of the three pages."""
 
@@ -33,9 +45,9 @@ class _FakeMaps:
         static: SPageFileStatic,
     ) -> None:
         self._by_name = {
-            PHYSICS_MAP_NAME: io.BytesIO(bytes(physics)),
-            GRAPHICS_MAP_NAME: io.BytesIO(bytes(graphics)),
-            STATIC_MAP_NAME: io.BytesIO(bytes(static)),
+            PHYSICS_MAP_NAME: _TrackingBuffer(bytes(physics)),
+            GRAPHICS_MAP_NAME: _TrackingBuffer(bytes(graphics)),
+            STATIC_MAP_NAME: _TrackingBuffer(bytes(static)),
         }
 
     def opener(self, name: str, size: int) -> io.BytesIO:
@@ -96,3 +108,21 @@ def test_default_opener_rejects_non_windows(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(sys, "platform", "linux")
     with pytest.raises(UnsupportedPlatformError):
         open_windows_shared_memory(PHYSICS_MAP_NAME, 16)
+
+
+def test_partial_connect_failure_closes_opened_maps() -> None:
+    """If a later page fails to open, earlier maps must be closed, not leaked."""
+    physics_buffer = _TrackingBuffer(bytes(SPageFilePhysics()))
+    calls = {"n": 0}
+
+    def flaky_opener(name: str, size: int) -> io.BytesIO:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return physics_buffer
+        raise OSError("mapping unavailable")
+
+    source = SharedMemoryTelemetrySource(opener=flaky_opener)
+    with pytest.raises(OSError, match="mapping unavailable"):
+        source.connect()
+    assert physics_buffer.was_closed is True
+

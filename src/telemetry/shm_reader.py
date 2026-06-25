@@ -19,7 +19,11 @@ from collections.abc import Callable
 from ctypes import Structure
 from typing import Protocol, TypeVar
 
-from src.telemetry.converters import frame_from_structs, static_from_struct
+from src.telemetry.converters import (
+    graphics_from_struct,
+    physics_from_struct,
+    static_from_struct,
+)
 from src.telemetry.models import ACStaticInfo, TelemetryFrame
 from src.telemetry.shm_structs import (
     GRAPHICS_MAP_NAME,
@@ -87,19 +91,31 @@ class SharedMemoryTelemetrySource(TelemetrySource):
         self._static: ACStaticInfo | None = None
 
     def connect(self) -> ACStaticInfo:
-        self._physics_map = self._opener(PHYSICS_MAP_NAME, PHYSICS_SIZE)
-        self._graphics_map = self._opener(GRAPHICS_MAP_NAME, GRAPHICS_SIZE)
-        self._static_map = self._opener(STATIC_MAP_NAME, STATIC_SIZE)
-        self._static = static_from_struct(self._read_static())
+        try:
+            self._physics_map = self._opener(PHYSICS_MAP_NAME, PHYSICS_SIZE)
+            self._graphics_map = self._opener(GRAPHICS_MAP_NAME, GRAPHICS_SIZE)
+            self._static_map = self._opener(STATIC_MAP_NAME, STATIC_SIZE)
+            raw_static = self._read_struct(self._static_map, SPageFileStatic, STATIC_SIZE)
+            self._static = static_from_struct(raw_static)
+        except Exception:
+            # Never leak partially-opened maps if a later open or read fails.
+            self.close()
+            raise
         return self._static
 
     def read_frame(self) -> TelemetryFrame:
         if self._physics_map is None or self._graphics_map is None or self._static is None:
             raise SourceNotConnectedError("call connect() before read_frame()")
+        # The static page only changes on session load, so it is read once in
+        # connect() and reused here rather than re-parsed every frame.
         physics = self._read_struct(self._physics_map, SPageFilePhysics, PHYSICS_SIZE)
         graphics = self._read_struct(self._graphics_map, SPageFileGraphic, GRAPHICS_SIZE)
-        static = self._read_static()
-        return frame_from_structs(physics, graphics, static, timestamp=self._clock())
+        return TelemetryFrame(
+            timestamp=self._clock(),
+            physics=physics_from_struct(physics),
+            graphics=graphics_from_struct(graphics),
+            static_info=self._static,
+        )
 
     def close(self) -> None:
         for buffer in (self._physics_map, self._graphics_map, self._static_map):
@@ -110,10 +126,6 @@ class SharedMemoryTelemetrySource(TelemetrySource):
         self._static_map = None
 
     # -- Internal helpers --------------------------------------------------
-    def _read_static(self) -> SPageFileStatic:
-        assert self._static_map is not None
-        return self._read_struct(self._static_map, SPageFileStatic, STATIC_SIZE)
-
     @staticmethod
     def _read_struct(buffer: ReadableBuffer, struct_type: type[_S], size: int) -> _S:
         buffer.seek(0)
