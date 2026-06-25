@@ -6,15 +6,17 @@ real-time telemetry orchestration is wired in from Phase 1 onwards.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 from fastapi import FastAPI
 
 from src import __version__
+from src.ai import OllamaClient, RaceEngineerAdvisor
 from src.analysis import EngineMonitor
-from src.analysis.pipeline import AnalysisPipeline
 from src.config import find_ac_install, get_settings
-from src.dashboard import TelemetryHub, create_app
-from src.knowledge import TrackInfo, load_track
+from src.dashboard import DashboardState, TelemetryHub, create_app, run_session
+from src.knowledge import TrackInfo, load_track, map_png_path
 from src.observability import configure_logging, get_logger
 from src.telemetry import (
     MockTelemetrySource,
@@ -89,12 +91,12 @@ def run(
         MockTelemetrySource() if mock else SharedMemoryTelemetrySource()
     )
     hub = TelemetryHub()
-    lap_log = get_logger("analysis")
+    state = DashboardState()
 
     async def producer() -> None:
-        await _capture_and_analyze(source, hub, hz=settings.app.telemetry_poll_hz, log=lap_log)
+        await _capture_and_analyze(source, hub, state, hz=settings.app.telemetry_poll_hz)
 
-    app_instance = create_app(hub, producer=producer)
+    app_instance = create_app(hub, state, producer=producer)
     log.info(
         "startup",
         mode="mock" if mock else "live",
@@ -113,16 +115,22 @@ def _serve(  # pragma: no cover - integration entry point
     uvicorn.run(app_instance, host=host, port=port, log_level=log_level.lower())
 
 
-def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - integration
-    """Load track knowledge for the active session, with a safe fallback."""
-    from pathlib import Path
-
+def _track_dir_for(static: ACStaticInfo) -> Path | None:  # pragma: no cover - integration
+    """Resolve the Assetto Corsa content directory for the active track."""
     settings = get_settings()
     ac_path = find_ac_install(settings.app.ac_install_path)
     if ac_path is not None and static.track:
         track_dir = Path(ac_path) / "content" / "tracks" / static.track
         if track_dir.is_dir():
-            return load_track(track_dir, layout=static.track_configuration or "")
+            return track_dir
+    return None
+
+
+def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - integration
+    """Load track knowledge for the active session, with a safe fallback."""
+    track_dir = _track_dir_for(static)
+    if track_dir is not None:
+        return load_track(track_dir, layout=static.track_configuration or "")
     label = static.track or "unknown"
     return TrackInfo(track_id=label, name=label)
 
@@ -130,31 +138,29 @@ def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - i
 async def _capture_and_analyze(  # pragma: no cover - integration entry point
     source: TelemetrySource,
     hub: TelemetryHub,
+    state: DashboardState,
     *,
     hz: int,
-    log: object,
 ) -> None:
-    """Stream telemetry, fan it out, and run the per-lap analysis pipeline."""
+    """Connect, load track + map, and stream the session's events to the hub."""
     static = source.connect()
     track = _load_track_info(static)
+    track_dir = _track_dir_for(static)
+    if track_dir is not None:
+        state.set_map_png(map_png_path(track_dir, layout=static.track_configuration or ""))
     engine_monitor = EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
-    pipeline = AnalysisPipeline(track, engine_monitor=engine_monitor)
-    bound_log = get_logger("analysis")
-    bound_log.info("session", track=track.name, car=static.car_model, corners=track.corner_count)
-    try:
-        async for frame in source.stream(hz, on_error="skip"):
-            hub.publish(frame)
-            report = pipeline.process(frame)
-            if report is not None:
-                bound_log.info(
-                    "lap-report",
-                    lap=report.lap.lap_number,
-                    time_ms=report.lap.lap_time_ms,
-                    personal_best=report.is_personal_best,
-                    advice=[rec.message for rec in report.recommendations][:3],
-                )
-    finally:
-        source.close()
+    settings = get_settings()
+    advisor = RaceEngineerAdvisor(OllamaClient.from_settings(settings.ollama))
+    get_logger("analysis").info(
+        "session",
+        track=track.name,
+        car=static.car_model,
+        corners=track.corner_count,
+        ai_model=settings.ollama.model,
+    )
+    await run_session(
+        source, hub, state, track, static, hz=hz, advisor=advisor, engine_monitor=engine_monitor
+    )
 
 
 if __name__ == "__main__":  # pragma: no cover
