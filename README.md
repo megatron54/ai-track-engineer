@@ -16,8 +16,8 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 | Phase | Capability | Status |
 |-------|------------|--------|
 | 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Backend done (React UI pending) |
-| 2 | Per-corner analysis + lap comparison | 🚧 In progress |
-| 3 | Natural-language coaching (local LLM via Ollama) | ⏳ Planned |
+| 2 | Per-corner analysis + lap comparison + tyre/engine monitors | ✅ Done |
+| 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done |
 | 4 | Real-time in-corner feedback | ⏳ Planned |
 | 5 | Pattern detection + session reports | ⏳ Planned |
 | 6 | Bidirectional voice assistant | ⏳ Planned |
