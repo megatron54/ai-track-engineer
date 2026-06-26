@@ -21,6 +21,7 @@ from src.dashboard import DashboardState, TelemetryHub, create_app, run_session
 from src.knowledge import TrackInfo, load_track, map_png_path
 from src.observability import configure_logging, get_logger
 from src.storage import SqliteStore
+from src.storage.session_recorder import SessionRecorder
 from src.telemetry import (
     MockTelemetrySource,
     SharedMemoryTelemetrySource,
@@ -204,18 +205,26 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
             ai_model=settings.ollama.model,
             session_id=session.id,
         )
-        await run_session(
-            source,
-            hub,
-            state,
-            track,
-            static,
-            hz=hz,
-            advisor=advisor,
-            engine_monitor=engine_monitor,
-            store=store,
-            session_id=session.id,
+        sessions_dir = Path("data/sessions")
+        recorder = SessionRecorder(
+            sessions_dir, track.track_id, static.car_model, session.id
         )
+        with recorder:
+            log.info("recording-telemetry", path=str(recorder.path))
+            await run_session(
+                source,
+                hub,
+                state,
+                track,
+                static,
+                hz=hz,
+                advisor=advisor,
+                engine_monitor=engine_monitor,
+                store=store,
+                session_id=session.id,
+                recorder=recorder,
+            )
+            log.info("recording-complete", rows=recorder.rows_written)
 
 
 if __name__ == "__main__":  # pragma: no cover
