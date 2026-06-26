@@ -86,7 +86,7 @@ class TrainedCornerPredictor(CornerPredictor):
         import numpy as np
 
         features = np.array([[entry_speed, brake_point, float(gear), float(corner_index)]])
-        predicted = float(self._model.predict(features)[0])  # type: ignore[union-attr]
+        predicted = float(self._model.predict(features)[0])  # type: ignore[attr-defined]
         return CornerPrediction(
             corner_index=corner_index,
             predicted_time_s=round(predicted, 3),
