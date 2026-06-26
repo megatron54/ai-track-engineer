@@ -45,7 +45,7 @@ class MessageQueue:
             raise ValueError("cooldown_s must be >= 0")
         self._cooldown = cooldown_s
         self._heap: list[PriorityMessage] = []
-        self._last_delivery: float = 0.0
+        self._last_delivery: float = -1e9  # allow the very first pop immediately
 
     def push(self, message: PriorityMessage) -> None:
         """Add a message to the queue."""
