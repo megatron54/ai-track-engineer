@@ -136,9 +136,11 @@
     }
 
     function project(x, z){
-      // world (x,z) -> image pixels via map.ini params
-      const px = (x + proj.x_offset) * proj.scale_factor;
-      const py = (z + proj.z_offset) * proj.scale_factor;
+      // AC minimap formula: px = (x + X_OFFSET) / SCALE_FACTOR + MARGIN
+      const s = proj.scale_factor || 1;
+      const m = proj.margin || 0;
+      const px = (x + proj.x_offset) / s + m;
+      const py = (z + proj.z_offset) / s + m;
       return [px, py];
     }
 

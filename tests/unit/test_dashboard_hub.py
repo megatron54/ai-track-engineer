@@ -69,7 +69,8 @@ _TRACK = TrackInfo(
     length_m=6946.0,
     corners=(Corner(index=1, name="La Source", entry=0.0, exit=0.05),),
     map=MapProjection(
-        width=1004.83, height=1593.82, x_offset=664.529, z_offset=982.854, scale_factor=1.3
+        width=1004.83, height=1593.82, x_offset=664.529, z_offset=982.854,
+        scale_factor=1.3, margin=20.0,
     ),
 )
 
