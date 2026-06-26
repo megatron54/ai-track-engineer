@@ -61,6 +61,7 @@ class AnalysisPipeline:
         self._buffer: list[TelemetryFrame] = []
         self._best_trace: LapTrace | None = None
         self._best_lap_time_ms: int | None = None
+        self._lap_start_session_ms: int = 0
 
     def process(self, frame: TelemetryFrame) -> LapReport | None:
         """Feed a frame; return a :class:`LapReport` when a lap completes."""
@@ -74,6 +75,8 @@ class AnalysisPipeline:
         lap_frames = self._buffer[:-1]
         report = self._build_report(lap, lap_frames)
         self._buffer = [frame]
+        # Record session time at the start of the new lap for accurate delta.
+        self._lap_start_session_ms = frame.graphics.current_time_ms
         return report
 
     def live_delta(self, frame: TelemetryFrame) -> float | None:
@@ -82,12 +85,17 @@ class AnalysisPipeline:
         Returns the current lap's elapsed time minus the best lap's time at the
         same normalised track position: positive means losing time, negative
         means gaining. ``None`` until a best lap exists.
+
+        AC's ``iCurrentTime`` is cumulative across the session, so the current
+        lap's elapsed time is ``iCurrentTime - _lap_start_session_ms``.
         """
         if self._best_trace is None:
             return None
         position = frame.graphics.normalized_car_position
-        elapsed = frame.graphics.current_time_ms / 1000.0
-        return elapsed - self._best_trace.time_at(position)
+        current_elapsed = (frame.graphics.current_time_ms - self._lap_start_session_ms) / 1000.0
+        if current_elapsed < 0:
+            return None  # session time reset (e.g. new session)
+        return current_elapsed - self._best_trace.time_at(position)
 
     @property
     def has_reference_lap(self) -> bool:

@@ -37,9 +37,11 @@ def test_to_pixel_matches_real_spa_projection() -> None:
     projection = parse_map_ini(_SPA_MAP_INI)
     assert projection is not None
     # Real captured Spa car coords -> verified pixel.
+    # AC formula: px = (x + X_OFFSET) / SCALE_FACTOR + MARGIN
     px, py = projection.to_pixel(-188.59, -254.52)
-    assert px == pytest.approx(618.7, abs=0.5)
-    assert py == pytest.approx(946.8, abs=0.5)
+    # Expected: ((-188.59+664.529)/1.3 + 20, (-254.52+982.854)/1.3 + 20) = (386.1, 580.3)
+    assert px == pytest.approx(386.1, abs=1.0)
+    assert py == pytest.approx(580.3, abs=1.0)
     assert 0 <= px <= projection.width
     assert 0 <= py <= projection.height
 

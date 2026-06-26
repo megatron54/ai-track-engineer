@@ -71,6 +71,7 @@ def parse_map_ini(text: str) -> MapProjection | None:
             x_offset=parser.getfloat(section, "X_OFFSET"),
             z_offset=parser.getfloat(section, "Z_OFFSET"),
             scale_factor=parser.getfloat(section, "SCALE_FACTOR", fallback=1.0),
+            margin=parser.getfloat(section, "MARGIN", fallback=0.0),
         )
     except (configparser.NoOptionError, ValueError):
         return None

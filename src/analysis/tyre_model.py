@@ -14,8 +14,33 @@ from pydantic import BaseModel, ConfigDict
 
 from src.telemetry.models import ACPhysics, Wheels
 
-_DEFAULT_OPTIMAL_MIN = 80.0
-_DEFAULT_OPTIMAL_MAX = 100.0
+_DEFAULT_OPTIMAL_MIN = 75.0
+_DEFAULT_OPTIMAL_MAX = 120.0
+
+# Approximate optimal temperature windows by compound family.
+# AC compound names vary by car; this covers common patterns.
+COMPOUND_WINDOWS: dict[str, tuple[float, float]] = {
+    "street": (70.0, 95.0),
+    "semislick": (75.0, 105.0),
+    "soft": (85.0, 115.0),
+    "medium": (80.0, 110.0),
+    "hard": (75.0, 105.0),
+    "supersoft": (90.0, 120.0),
+    "hypersoft": (95.0, 125.0),
+    "slick": (85.0, 120.0),
+}
+
+
+def window_for_compound(compound: str) -> tuple[float, float]:
+    """Return the optimal (min, max) temperature window for a tyre compound.
+
+    Falls back to a wide default if the compound name is not recognised.
+    """
+    name = compound.lower().strip()
+    for key, window in COMPOUND_WINDOWS.items():
+        if key in name:
+            return window
+    return (_DEFAULT_OPTIMAL_MIN, _DEFAULT_OPTIMAL_MAX)
 
 
 class ThermalStatus(StrEnum):
