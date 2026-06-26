@@ -16,11 +16,11 @@ def test_invalid_window() -> None:
 @pytest.mark.parametrize(
     ("temp", "expected"),
     [
-        (70.0, ThermalStatus.COLD),
-        (80.0, ThermalStatus.OPTIMAL),
-        (90.0, ThermalStatus.OPTIMAL),
+        (60.0, ThermalStatus.COLD),
+        (75.0, ThermalStatus.OPTIMAL),
         (100.0, ThermalStatus.OPTIMAL),
-        (110.0, ThermalStatus.HOT),
+        (120.0, ThermalStatus.OPTIMAL),
+        (130.0, ThermalStatus.HOT),
     ],
 )
 def test_classify(temp: float, expected: ThermalStatus) -> None:
@@ -40,14 +40,14 @@ def test_evaluate_detects_overheating_front() -> None:
     from src.telemetry.models import Wheels
 
     physics = make_physics(
-        tyre_core_temp=Wheels(front_left=110.0, front_right=108.0, rear_left=90.0, rear_right=90.0)
+        tyre_core_temp=Wheels(front_left=135.0, front_right=132.0, rear_left=95.0, rear_right=95.0)
     )
     report = TyreThermalModel().evaluate(physics)
     assert report.overheating is True
     assert report.statuses[0] is ThermalStatus.HOT
     assert report.statuses[2] is ThermalStatus.OPTIMAL
     # Front markedly hotter than rear.
-    assert report.front_rear_delta > 15.0
+    assert report.front_rear_delta > 30.0
 
 
 def test_evaluate_detects_cold_tyres() -> None:

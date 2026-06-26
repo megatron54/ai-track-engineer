@@ -44,12 +44,17 @@ class MapProjection(BaseModel):
     x_offset: float
     z_offset: float
     scale_factor: float = 1.0
+    margin: float = 0.0
 
     def to_pixel(self, x: float, z: float) -> tuple[float, float]:
-        """Project world ``(x, z)`` coordinates to map pixel ``(px, py)``."""
+        """Project world ``(x, z)`` coordinates to map pixel ``(px, py)``.
+
+        AC's minimap formula: ``px = (x + X_OFFSET) / SCALE_FACTOR + MARGIN``.
+        """
+        scale = self.scale_factor if self.scale_factor != 0 else 1.0
         return (
-            (x + self.x_offset) * self.scale_factor,
-            (z + self.z_offset) * self.scale_factor,
+            (x + self.x_offset) / scale + self.margin,
+            (z + self.z_offset) / scale + self.margin,
         )
 
 

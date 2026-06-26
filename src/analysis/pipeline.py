@@ -19,7 +19,7 @@ from src.ai.models import Recommendation
 from src.analysis.engine_monitor import EngineAlert, EngineMonitor
 from src.analysis.lap_comparator import LapComparison
 from src.analysis.models import CornerDelta
-from src.analysis.tyre_model import TyreThermalModel, TyreThermalReport
+from src.analysis.tyre_model import TyreThermalModel, TyreThermalReport, window_for_compound
 from src.knowledge.models import TrackInfo
 from src.processing.lap_segmenter import LapSegmenter
 from src.processing.lap_trace import LapTrace
@@ -52,18 +52,28 @@ class AnalysisPipeline:
         advisor: RaceEngineerAdvisor | None = None,
         tyre_model: TyreThermalModel | None = None,
         engine_monitor: EngineMonitor | None = None,
+        min_lap_time_ms: int = 60_000,
     ) -> None:
         self._track = track
         self._advisor = advisor or RaceEngineerAdvisor()
         self._tyre_model = tyre_model or TyreThermalModel()
         self._engine_monitor = engine_monitor
-        self._segmenter = LapSegmenter()
+        self._segmenter = LapSegmenter(min_lap_time_ms=min_lap_time_ms)
         self._buffer: list[TelemetryFrame] = []
         self._best_trace: LapTrace | None = None
         self._best_lap_time_ms: int | None = None
+        self._lap_start_session_ms: int = 0
+        self._compound_detected: str | None = None
 
     def process(self, frame: TelemetryFrame) -> LapReport | None:
         """Feed a frame; return a :class:`LapReport` when a lap completes."""
+        # Auto-detect tyre compound and adjust thermal thresholds once.
+        compound = frame.graphics.tyre_compound
+        if compound and compound != self._compound_detected:
+            self._compound_detected = compound
+            opt_min, opt_max = window_for_compound(compound)
+            self._tyre_model = TyreThermalModel(optimal_min=opt_min, optimal_max=opt_max)
+
         self._buffer.append(frame)
         lap = self._segmenter.process(frame)
         if lap is None:
@@ -74,6 +84,8 @@ class AnalysisPipeline:
         lap_frames = self._buffer[:-1]
         report = self._build_report(lap, lap_frames)
         self._buffer = [frame]
+        # Record session time at the start of the new lap for accurate delta.
+        self._lap_start_session_ms = frame.graphics.current_time_ms
         return report
 
     def live_delta(self, frame: TelemetryFrame) -> float | None:
@@ -82,12 +94,17 @@ class AnalysisPipeline:
         Returns the current lap's elapsed time minus the best lap's time at the
         same normalised track position: positive means losing time, negative
         means gaining. ``None`` until a best lap exists.
+
+        AC's ``iCurrentTime`` is cumulative across the session, so the current
+        lap's elapsed time is ``iCurrentTime - _lap_start_session_ms``.
         """
         if self._best_trace is None:
             return None
         position = frame.graphics.normalized_car_position
-        elapsed = frame.graphics.current_time_ms / 1000.0
-        return elapsed - self._best_trace.time_at(position)
+        current_elapsed = (frame.graphics.current_time_ms - self._lap_start_session_ms) / 1000.0
+        if current_elapsed < 0:
+            return None  # session time reset (e.g. new session)
+        return current_elapsed - self._best_trace.time_at(position)
 
     @property
     def has_reference_lap(self) -> bool:

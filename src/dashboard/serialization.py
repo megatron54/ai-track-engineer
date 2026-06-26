@@ -29,6 +29,7 @@ def session_event(track: TrackInfo, *, car: str) -> dict[str, Any]:
             "x_offset": projection.x_offset,
             "z_offset": projection.z_offset,
             "scale_factor": projection.scale_factor,
+            "margin": projection.margin,
         }
     return {
         "type": "session",
