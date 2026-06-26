@@ -219,8 +219,24 @@
     function onAdvice(d){
       if(!d.messages || !d.messages.length) return;
       const card = document.createElement("div"); card.className="card ai";
-      card.innerHTML = `<div class="ch"><b>🏁 Engineer — Lap ${d.lap}</b><span class="muted">AI</span></div>`
+      card.innerHTML = `<div class="ch"><b>Engineer — Lap ${d.lap}</b><span class="muted">AI</span></div>`
         + d.messages.map(m=>`<div class="adv">${m}</div>`).join("");
+      prepend(card);
+    }
+
+    function onStrategy(d){
+      const card = document.createElement("div"); card.className="card";
+      card.innerHTML = `<div class="ch"><b>Strategy — Lap ${d.lap}</b></div>`
+        + `<div class="adv">Fuel: ${d.fuel.message}</div>`
+        + `<div class="adv">Tyres: ${d.tyres.message}</div>`
+        + `<div class="adv">Pit: ${d.pit.message}</div>`;
+      prepend(card);
+    }
+
+    function onCoaching(d){
+      const card = document.createElement("div"); card.className="card ai";
+      const prio = d.priority === "CRITICAL" ? " style='color:var(--bad)'" : "";
+      card.innerHTML = `<div class="adv"${prio}>${d.text}</div>`;
       prepend(card);
     }
 
@@ -230,6 +246,8 @@
       else if(d.type === "telemetry") onTelemetry(d);
       else if(d.type === "lap") prepend(lapCard(d));
       else if(d.type === "advice") onAdvice(d);
+      else if(d.type === "strategy") onStrategy(d);
+      else if(d.type === "coaching") onCoaching(d);
     };
 
     window.addEventListener("resize", redraw);
