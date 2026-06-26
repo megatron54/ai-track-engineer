@@ -1,305 +1,143 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>AI-TrackEngineer</title>
-  <style>
-    :root{--bg:#0a0a0f;--panel:#12141a;--panel2:#1a1d25;--border:#262a35;--txt:#eef;--dim:#6b7280;--accent:#00d4ff;--good:#00e676;--bad:#ff1744;--warn:#ffab00;--purple:#a855f7;--f1red:#e10600}
-    *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:'Formula1',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);overflow-x:hidden}
-    header{display:flex;align-items:center;gap:.8rem;padding:.5rem 1.2rem;background:linear-gradient(90deg,var(--f1red) 0%,#900 100%);border-bottom:2px solid var(--f1red)}
-    header h1{font-size:.9rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
-    .pill{font-size:.65rem;padding:.2rem .6rem;border-radius:3px;background:rgba(255,255,255,.15);font-weight:600;letter-spacing:.5px}
-    .pill.live{background:var(--good);color:#000}
-    .main{display:grid;grid-template-columns:320px 1fr 340px;gap:0;height:calc(100vh - 42px)}
-    @media(max-width:1100px){.main{grid-template-columns:1fr}}
-    .col{padding:.8rem;overflow-y:auto;border-right:1px solid var(--border)}
-    .col:last-child{border-right:none}
-
-    /* LEFT: Map */
-    #map-col{background:#050508;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    #map-col h2{font-size:.6rem;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:.5rem}
-    canvas{background:#050508;border-radius:4px;max-width:100%;max-height:calc(100vh - 100px)}
-
-    /* CENTER: Telemetry */
-    .speed-block{text-align:center;margin-bottom:.8rem}
-    .speed-block .v{font-size:4.5rem;font-weight:700;line-height:1;font-variant-numeric:tabular-nums}
-    .speed-block .u{font-size:.7rem;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-    .delta-block{text-align:center;margin-bottom:1rem;padding:.6rem;background:var(--panel);border-radius:6px;border:1px solid var(--border)}
-    .delta-block .v{font-size:2.2rem;font-weight:700;font-variant-numeric:tabular-nums}
-    .delta-block .v.pos{color:var(--bad)} .delta-block .v.neg{color:var(--good)}
-    .delta-block .label{font-size:.6rem;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
-    .metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.8rem}
-    .metric{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem .6rem;text-align:center}
-    .metric .k{font-size:.55rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;margin-bottom:.2rem}
-    .metric .v{font-size:1.3rem;font-weight:600;font-variant-numeric:tabular-nums}
-    .bars{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:.8rem}
-    .bar-wrap{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem .6rem}
-    .bar-wrap .k{font-size:.55rem;color:var(--dim);text-transform:uppercase;margin-bottom:.3rem}
-    .bar{height:8px;background:#1a1a2e;border-radius:4px;overflow:hidden}
-    .bar>span{display:block;height:100%;width:0%;transition:width .05s linear;border-radius:4px}
-    .bar.gas>span{background:var(--good)} .bar.brake>span{background:var(--bad)}
-    .timing{display:grid;grid-template-columns:repeat(3,1fr);gap:.5rem;margin-bottom:.8rem}
-    .timing .t{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem;text-align:center}
-    .timing .t .k{font-size:.55rem;color:var(--dim);text-transform:uppercase;margin-bottom:.2rem}
-    .timing .t .v{font-size:1.1rem;font-weight:600;font-variant-numeric:tabular-nums}
-    .tyres{display:grid;grid-template-columns:repeat(4,1fr);gap:.4rem;margin-bottom:.8rem}
-    .tyre{text-align:center;border-radius:6px;padding:.4rem 0;font-variant-numeric:tabular-nums;font-size:.9rem;font-weight:600;background:var(--panel);border:1px solid var(--border)}
-    .tyre.cold{border-color:#3b82f6;color:#93c5fd} .tyre.hot{border-color:var(--bad);color:#ff8a80} .tyre.ok{border-color:var(--good);color:#69f0ae}
-    .fuel-bar{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.5rem .6rem;margin-bottom:.8rem}
-    .fuel-bar .k{font-size:.55rem;color:var(--dim);text-transform:uppercase;margin-bottom:.3rem}
-    .fuel-inner{height:10px;background:#1a1a2e;border-radius:5px;overflow:hidden}
-    .fuel-inner>span{display:block;height:100%;background:var(--warn);border-radius:5px;transition:width .3s}
-
-    /* RIGHT: Engineer feed */
-    #feed-col h2{font-size:.6rem;text-transform:uppercase;letter-spacing:2px;color:var(--dim);margin-bottom:.6rem}
-    .feed{display:flex;flex-direction:column;gap:.5rem}
-    .card{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:.6rem .7rem;animation:slideIn .3s ease}
-    @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
-    .card.ai{border-left:3px solid var(--accent)}
-    .card.strategy{border-left:3px solid var(--warn)}
-    .card.coaching{border-left:3px solid var(--purple)}
-    .card .ch{display:flex;justify-content:space-between;font-size:.7rem;margin-bottom:.3rem;color:var(--dim)}
-    .card .ch b{color:var(--txt)}
-    .card .pb{color:var(--good);font-weight:700}
-    .card .loss{font-size:.75rem;color:var(--warn);margin-top:.2rem}
-    .card .adv{font-size:.78rem;margin-top:.2rem;color:var(--txt);line-height:1.4}
-    .muted{color:var(--dim);font-size:.75rem}
-
-    #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,5,10,.9);z-index:99}
-    #overlay.hidden{display:none}
-    #overlay .msg{font-size:1rem;color:var(--dim);text-align:center}
-    #overlay .msg span{display:block;font-size:.7rem;margin-top:.5rem;color:var(--accent)}
-  </style>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>AI-TrackEngineer</title>
+<style>
+:root{--bg:#0a0a0f;--panel:#12141a;--border:#1e222b;--txt:#eef;--dim:#5a6270;--accent:#00d4ff;--good:#00e676;--bad:#ff1744;--warn:#ffab00;--purple:#a855f7;--f1red:#e10600}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt)}
+header{display:flex;align-items:center;gap:.6rem;padding:.35rem 1rem;background:linear-gradient(90deg,var(--f1red),#900);height:36px}
+header h1{font-size:.75rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+.pill{font-size:.6rem;padding:.15rem .5rem;border-radius:3px;background:rgba(255,255,255,.12);font-weight:600}
+.pill.live{background:var(--good);color:#000}
+.main{display:grid;grid-template-columns:240px 1fr 260px;height:calc(100vh - 36px)}
+.col{padding:.4rem;overflow:hidden;border-right:1px solid var(--border)}
+.col:last-child{border-right:none}
+/* LEFT MAP */
+#map-col{display:flex;align-items:center;justify-content:center;background:#050508}
+canvas{max-width:100%;max-height:100%}
+/* CENTER */
+#telem-col{display:grid;grid-template-rows:auto auto 1fr;gap:.3rem;padding:.5rem .6rem}
+.top-row{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.speed{font-size:3.2rem;font-weight:700;line-height:1;text-align:center;font-variant-numeric:tabular-nums}
+.speed-unit{font-size:.55rem;color:var(--dim);text-transform:uppercase;text-align:center;letter-spacing:1px}
+.delta-box{display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.3rem}
+.delta-box .v{font-size:2rem;font-weight:700;font-variant-numeric:tabular-nums}
+.delta-box .v.pos{color:var(--bad)}.delta-box .v.neg{color:var(--good)}
+.delta-box .k{font-size:.5rem;color:var(--dim);text-transform:uppercase;letter-spacing:.5px}
+.mid{display:grid;grid-template-columns:repeat(6,1fr);gap:.3rem}
+.m{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:.25rem .3rem;text-align:center}
+.m .k{font-size:.48rem;color:var(--dim);text-transform:uppercase;letter-spacing:.3px}
+.m .v{font-size:1rem;font-weight:600;font-variant-numeric:tabular-nums}
+.bot{display:grid;grid-template-columns:1fr 1fr;gap:.3rem;align-content:start}
+.bars{display:flex;flex-direction:column;gap:.25rem}
+.bar-w{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:.25rem .4rem}
+.bar-w .k{font-size:.48rem;color:var(--dim);text-transform:uppercase}
+.bar{height:7px;background:#111;border-radius:4px;overflow:hidden;margin-top:.15rem}
+.bar>span{display:block;height:100%;width:0%;transition:width .05s;border-radius:4px}
+.bar.g>span{background:var(--good)}.bar.b>span{background:var(--bad)}
+.timing{display:grid;grid-template-columns:repeat(3,1fr);gap:.25rem}
+.tt{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:.2rem .3rem;text-align:center}
+.tt .k{font-size:.45rem;color:var(--dim);text-transform:uppercase}.tt .v{font-size:.85rem;font-weight:600;font-variant-numeric:tabular-nums}
+.tyres{display:grid;grid-template-columns:repeat(4,1fr);gap:.2rem}
+.tyre{text-align:center;border-radius:5px;padding:.2rem 0;font-size:.75rem;font-weight:600;background:var(--panel);border:1px solid var(--border)}
+.tyre.cold{border-color:#3b82f6;color:#93c5fd}.tyre.hot{border-color:var(--bad);color:#ff8a80}.tyre.ok{border-color:var(--good);color:#69f0ae}
+.fuel{background:var(--panel);border:1px solid var(--border);border-radius:5px;padding:.25rem .4rem}
+.fuel .k{font-size:.48rem;color:var(--dim);text-transform:uppercase}
+.fuel-in{height:7px;background:#111;border-radius:4px;overflow:hidden;margin-top:.15rem}
+.fuel-in>span{display:block;height:100%;background:var(--warn);border-radius:4px;transition:width .3s}
+/* RIGHT FEED */
+#feed-col{display:flex;flex-direction:column;overflow:hidden}
+#feed-col h2{font-size:.55rem;text-transform:uppercase;letter-spacing:1.5px;color:var(--dim);padding:.3rem 0}
+.feed{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:.3rem}
+.feed::-webkit-scrollbar{width:4px}.feed::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:.4rem .5rem;animation:si .2s ease}
+@keyframes si{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.card.ai{border-left:3px solid var(--accent)}.card.strategy{border-left:3px solid var(--warn)}.card.coaching{border-left:3px solid var(--purple)}
+.card .ch{display:flex;justify-content:space-between;font-size:.6rem;color:var(--dim);margin-bottom:.15rem}.card .ch b{color:var(--txt)}
+.card .pb{color:var(--good);font-weight:700}
+.card .loss{font-size:.65rem;color:var(--warn)}.card .adv{font-size:.68rem;margin-top:.15rem;line-height:1.3}
+.muted{color:var(--dim);font-size:.65rem}
+#overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(5,5,10,.92);z-index:99}
+#overlay.hidden{display:none}
+#overlay .msg{color:var(--dim);text-align:center;font-size:.9rem}
+#overlay .msg span{display:block;font-size:.65rem;margin-top:.4rem;color:var(--accent)}
+</style>
 </head>
 <body>
-  <header>
-    <h1>AI-TrackEngineer</h1>
-    <span class="pill" id="status">CONNECTING</span>
-    <span class="pill" id="track">---</span>
-    <span class="pill" id="car">---</span>
-    <span style="flex:1"></span>
-    <span class="pill" id="session-mode">PRACTICE</span>
-    <span class="pill" id="lap-counter">LAP 0</span>
-  </header>
-
-  <div class="main">
-    <!-- LEFT: Track map -->
-    <div class="col" id="map-col">
-      <h2>Circuit GPS</h2>
-      <canvas id="map" width="300" height="480"></canvas>
-    </div>
-
-    <!-- CENTER: Live telemetry -->
-    <div class="col" id="telem-col">
-      <div class="speed-block">
-        <div class="v" id="speed">---</div>
-        <div class="u">km/h</div>
-      </div>
-      <div class="delta-block">
-        <div class="label">Delta vs Personal Best</div>
-        <div class="v" id="delta">---</div>
-      </div>
-      <div class="metrics">
-        <div class="metric"><div class="k">RPM</div><div class="v" id="rpm">---</div></div>
-        <div class="metric"><div class="k">Gear</div><div class="v" id="gear">-</div></div>
-        <div class="metric"><div class="k">Position</div><div class="v" id="pos">-</div></div>
-      </div>
+<header>
+<h1>AI-TrackEngineer</h1>
+<span class="pill" id="status">CONNECTING</span>
+<span class="pill" id="track">---</span>
+<span class="pill" id="car">---</span>
+<span style="flex:1"></span>
+<span class="pill" id="smode">PRACTICE</span>
+<span class="pill" id="lapc">LAP 0</span>
+</header>
+<div class="main">
+<div class="col" id="map-col"><canvas id="map" width="230" height="370"></canvas></div>
+<div class="col" id="telem-col">
+  <div class="top-row">
+    <div><div class="speed" id="speed">---</div><div class="speed-unit">km/h</div></div>
+    <div class="delta-box"><div class="k">Delta vs Best</div><div class="v" id="delta">---</div></div>
+  </div>
+  <div class="mid">
+    <div class="m"><div class="k">RPM</div><div class="v" id="rpm">-</div></div>
+    <div class="m"><div class="k">Gear</div><div class="v" id="gear">-</div></div>
+    <div class="m"><div class="k">Pos</div><div class="v" id="pos">-</div></div>
+    <div class="m"><div class="k">Sector</div><div class="v" id="sector">-</div></div>
+    <div class="m"><div class="k">V.Max</div><div class="v" id="vmax">-</div></div>
+    <div class="m"><div class="k">V.Avg</div><div class="v" id="vavg">-</div></div>
+  </div>
+  <div class="bot">
+    <div>
       <div class="bars">
-        <div class="bar-wrap"><div class="k">Throttle</div><div class="bar gas"><span id="gas"></span></div></div>
-        <div class="bar-wrap"><div class="k">Brake</div><div class="bar brake"><span id="brake"></span></div></div>
+        <div class="bar-w"><div class="k">Throttle</div><div class="bar g"><span id="gas"></span></div></div>
+        <div class="bar-w"><div class="k">Brake</div><div class="bar b"><span id="brake"></span></div></div>
       </div>
-      <div class="timing">
-        <div class="t"><div class="k">Current</div><div class="v" id="cur">-:--:---</div></div>
-        <div class="t"><div class="k">Last</div><div class="v" id="last">-:--:---</div></div>
-        <div class="t"><div class="k">Best</div><div class="v" id="best">-:--:---</div></div>
+      <div class="timing" style="margin-top:.3rem">
+        <div class="tt"><div class="k">Current</div><div class="v" id="cur">-:--</div></div>
+        <div class="tt"><div class="k">Last</div><div class="v" id="last">-:--</div></div>
+        <div class="tt"><div class="k">Best</div><div class="v" id="best">-:--</div></div>
       </div>
+    </div>
+    <div>
       <div class="tyres">
         <div class="tyre" id="t0">--</div><div class="tyre" id="t1">--</div>
         <div class="tyre" id="t2">--</div><div class="tyre" id="t3">--</div>
       </div>
-      <div class="fuel-bar">
-        <div class="k">Fuel: <span id="fuel-val">--</span> L</div>
-        <div class="fuel-inner"><span id="fuel-bar"></span></div>
-      </div>
-      <div class="metrics">
-        <div class="metric"><div class="k">Max Speed</div><div class="v" id="vmax">-</div></div>
-        <div class="metric"><div class="k">Avg Speed</div><div class="v" id="vavg">-</div></div>
-        <div class="metric"><div class="k">Sector</div><div class="v" id="sector">-</div></div>
-      </div>
-    </div>
-
-    <!-- RIGHT: Engineer feed -->
-    <div class="col" id="feed-col">
-      <h2>Race Engineer</h2>
-      <div class="feed" id="feed"><div class="muted">Waiting for session data...</div></div>
+      <div class="fuel" style="margin-top:.25rem"><div class="k">Fuel <span id="fv">--</span>L</div><div class="fuel-in"><span id="fb"></span></div></div>
     </div>
   </div>
-
-  <div id="overlay"><div class="msg">Waiting for Assetto Corsa...<span>Start a session and drive out of the pits</span></div></div>
-
-  <script>
-    const $ = id => document.getElementById(id);
-    const ws = new WebSocket(`ws://${location.host}/ws/telemetry`);
-    let proj = null, mapImg = null, trail = [], lastLap = -1;
-    let vmax = 0, vsum = 0, vcount = 0, maxFuel = 50;
-    const canvas = $("map"), ctx = canvas.getContext("2d");
-
-    ws.onopen = () => { $("status").textContent = "LIVE"; $("status").classList.add("live"); };
-    ws.onclose = () => { $("status").textContent = "DISCONNECTED"; $("status").classList.remove("live"); };
-
-    function tyreClass(t) { if(t < 75) return "cold"; if(t > 120) return "hot"; return "ok"; }
-
-    function loadMap() {
-      mapImg = new Image();
-      mapImg.onload = () => {
-        // Match canvas aspect ratio to image
-        const aspect = mapImg.naturalHeight / mapImg.naturalWidth;
-        canvas.width = 300;
-        canvas.height = Math.round(300 * aspect);
-        redraw();
-      };
-      mapImg.src = "/api/track/map.png?ts=" + Date.now();
-    }
-
-    function project(x, z) {
-      const s = proj.scale_factor || 1, m = proj.margin || 0;
-      return [(x + proj.x_offset) / s + m, (z + proj.z_offset) / s + m];
-    }
-
-    function redraw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      if (!mapImg || !mapImg.naturalWidth) return;
-      const iw = mapImg.naturalWidth, ih = mapImg.naturalHeight;
-      const scale = Math.min(canvas.width / iw, canvas.height / ih);
-      const dw = iw * scale, dh = ih * scale;
-      const ox = (canvas.width - dw) / 2, oy = (canvas.height - dh) / 2;
-      ctx.globalAlpha = 0.6;
-      ctx.drawImage(mapImg, ox, oy, dw, dh);
-      ctx.globalAlpha = 1;
-      const toCanvas = (x, z) => {
-        const [px, py] = project(x, z);
-        return [ox + (px / iw) * dw, oy + (py / ih) * dh];
-      };
-      // Trail
-      if (trail.length > 1) {
-        ctx.beginPath();
-        ctx.lineWidth = 2.5;
-        ctx.strokeStyle = "rgba(0,212,255,.85)";
-        ctx.lineCap = "round";
-        trail.forEach((p, i) => { const [cx, cy] = toCanvas(p[0], p[1]); i ? ctx.lineTo(cx, cy) : ctx.moveTo(cx, cy); });
-        ctx.stroke();
-      }
-      // Car dot
-      if (trail.length) {
-        const p = trail[trail.length - 1], [cx, cy] = toCanvas(p[0], p[1]);
-        ctx.beginPath(); ctx.arc(cx, cy, 5, 0, 7); ctx.fillStyle = "#fff"; ctx.fill();
-        ctx.beginPath(); ctx.arc(cx, cy, 8, 0, 7); ctx.strokeStyle = "#00d4ff"; ctx.lineWidth = 2; ctx.stroke();
-      }
-    }
-
-    function onSession(d) {
-      $("track").textContent = d.track || "---";
-      $("car").textContent = d.car || "---";
-      proj = d.map; trail = [];
-      if (proj) loadMap();
-    }
-
-    function onTelemetry(d) {
-      if (d.status === "LIVE") $("overlay").classList.add("hidden");
-      $("speed").textContent = Math.round(d.speed_kmh);
-      $("rpm").textContent = d.rpm;
-      $("gear").textContent = d.gear;
-      $("pos").textContent = d.position || "-";
-      $("sector").textContent = (d.sector | 0) + 1;
-      $("cur").textContent = d.current_time || "-:--:---";
-      $("last").textContent = d.last_time || "-:--:---";
-      $("best").textContent = d.best_time || "-:--:---";
-      $("gas").style.width = Math.round(d.gas * 100) + "%";
-      $("brake").style.width = Math.round(d.brake * 100) + "%";
-      $("lap-counter").textContent = "LAP " + (d.completed_laps || 0);
-      $("session-mode").textContent = d.session || "PRACTICE";
-      // Delta
-      const dv = $("delta"); dv.classList.remove("pos", "neg");
-      if (d.delta == null) { dv.textContent = "---"; }
-      else { dv.textContent = (d.delta > 0 ? "+" : "") + d.delta.toFixed(3); dv.classList.add(d.delta > 0 ? "pos" : "neg"); }
-      // Speed stats
-      if (d.speed_kmh > 10) { if (d.speed_kmh > vmax) vmax = d.speed_kmh; vsum += d.speed_kmh; vcount++; }
-      $("vmax").textContent = Math.round(vmax);
-      $("vavg").textContent = vcount ? Math.round(vsum / vcount) : "-";
-      // Fuel
-      if (d.fuel > maxFuel) maxFuel = d.fuel;
-      $("fuel-val").textContent = d.fuel.toFixed(1);
-      $("fuel-bar").style.width = Math.round((d.fuel / maxFuel) * 100) + "%";
-      // Tyres
-      (d.tyre_temp || []).forEach((t, i) => {
-        const el = $("t" + i);
-        if (el) { el.textContent = Math.round(t) + "\u00B0"; el.className = "tyre " + tyreClass(t); }
-      });
-      // Map trail
-      if (proj && d.coords && (d.coords[0] !== 0 || d.coords[1] !== 0)) {
-        if (d.completed_laps !== lastLap) { trail = []; lastLap = d.completed_laps; vmax = 0; vsum = 0; vcount = 0; }
-        trail.push(d.coords);
-        if (trail.length > 2000) trail.shift();
-        redraw();
-      }
-    }
-
-    function prepend(node) {
-      const feed = $("feed");
-      if (feed.firstChild && feed.firstChild.classList && feed.firstChild.classList.contains("muted")) feed.innerHTML = "";
-      feed.insertBefore(node, feed.firstChild);
-      while (feed.children.length > 50) feed.removeChild(feed.lastChild);
-    }
-
-    function lapCard(d) {
-      const card = document.createElement("div"); card.className = "card";
-      const mm = Math.floor(d.time_ms / 60000), ss = ((d.time_ms % 60000) / 1000).toFixed(3).padStart(6, "0");
-      const pb = d.is_personal_best ? '<span class="pb">PB!</span>' : '';
-      const valid = d.valid ? '' : ' <span style="color:var(--bad)">[INVALID]</span>';
-      let html = `<div class="ch"><b>Lap ${d.number} - ${mm}:${ss}${valid}</b>${pb}</div>`;
-      if (d.corner_losses && d.corner_losses.length)
-        html += `<div class="loss">${d.corner_losses.map(l => l.corner + " +" + l.delta_s.toFixed(2) + "s").join(" | ")}</div>`;
-      if (d.sectors_ms && d.sectors_ms.length)
-        html += `<div class="adv" style="color:var(--dim)">S: ${d.sectors_ms.map(s => (s/1000).toFixed(3)).join(" / ")}</div>`;
-      card.innerHTML = html;
-      return card;
-    }
-
-    function onAdvice(d) {
-      if (!d.messages || !d.messages.length) return;
-      const card = document.createElement("div"); card.className = "card ai";
-      card.innerHTML = `<div class="ch"><b>Engineer - Lap ${d.lap}</b><span style="color:var(--accent)">AI</span></div>`
-        + d.messages.map(m => `<div class="adv">${m}</div>`).join("");
-      prepend(card);
-    }
-
-    function onStrategy(d) {
-      const card = document.createElement("div"); card.className = "card strategy";
-      card.innerHTML = `<div class="ch"><b>Strategy - Lap ${d.lap}</b></div>`
-        + `<div class="adv">${d.fuel.message}</div>`
-        + `<div class="adv">${d.tyres.message}</div>`
-        + `<div class="adv">${d.pit.message}</div>`;
-      prepend(card);
-    }
-
-    function onCoaching(d) {
-      const card = document.createElement("div"); card.className = "card coaching";
-      card.innerHTML = `<div class="adv">${d.text}</div>`;
-      prepend(card);
-    }
-
-    ws.onmessage = (e) => {
-      const d = JSON.parse(e.data);
-      if (d.type === "session") onSession(d);
-      else if (d.type === "telemetry") onTelemetry(d);
-      else if (d.type === "lap") prepend(lapCard(d));
-      else if (d.type === "advice") onAdvice(d);
-      else if (d.type === "strategy") onStrategy(d);
-      else if (d.type === "coaching") onCoaching(d);
-    };
-    window.addEventListener("resize", redraw);
-  </script>
+</div>
+<div class="col" id="feed-col">
+  <h2>Race Engineer</h2>
+  <div class="feed" id="feed"><div class="muted">Waiting for session...</div></div>
+</div>
+</div>
+<div id="overlay"><div class="msg">Waiting for Assetto Corsa<span>Drive out of the pits to begin</span></div></div>
+<script>
+const $=id=>document.getElementById(id);
+const ws=new WebSocket(`ws://${location.host}/ws/telemetry`);
+let proj=null,mapImg=null,trail=[],lastLap=-1,vmax=0,vsum=0,vcount=0,maxFuel=50;
+const canvas=$("map"),ctx=canvas.getContext("2d");
+ws.onopen=()=>{$("status").textContent="LIVE";$("status").classList.add("live")};
+ws.onclose=()=>{$("status").textContent="OFF";$("status").classList.remove("live")};
+function tc(t){return t<75?"cold":t>120?"hot":"ok"}
+function loadMap(){mapImg=new Image();mapImg.onload=()=>{const a=mapImg.naturalHeight/mapImg.naturalWidth;canvas.width=230;canvas.height=Math.round(230*a);redraw()};mapImg.src="/api/track/map.png?t="+Date.now()}
+function project(x,z){const s=proj.scale_factor||1,m=proj.margin||0;return[(x+proj.x_offset)/s+m,(z+proj.z_offset)/s+m]}
+function redraw(){ctx.clearRect(0,0,canvas.width,canvas.height);if(!mapImg||!mapImg.naturalWidth)return;const iw=mapImg.naturalWidth,ih=mapImg.naturalHeight,sc=Math.min(canvas.width/iw,canvas.height/ih),dw=iw*sc,dh=ih*sc,ox=(canvas.width-dw)/2,oy=(canvas.height-dh)/2;ctx.globalAlpha=.55;ctx.drawImage(mapImg,ox,oy,dw,dh);ctx.globalAlpha=1;const tc2=(x,z)=>{const[px,py]=project(x,z);return[ox+(px/iw)*dw,oy+(py/ih)*dh]};if(trail.length>1){ctx.beginPath();ctx.lineWidth=2;ctx.strokeStyle="rgba(0,212,255,.8)";ctx.lineCap="round";trail.forEach((p,i)=>{const[cx,cy]=tc2(p[0],p[1]);i?ctx.lineTo(cx,cy):ctx.moveTo(cx,cy)});ctx.stroke()}if(trail.length){const p=trail[trail.length-1],[cx,cy]=tc2(p[0],p[1]);ctx.beginPath();ctx.arc(cx,cy,4,0,7);ctx.fillStyle="#fff";ctx.fill();ctx.beginPath();ctx.arc(cx,cy,7,0,7);ctx.strokeStyle="#00d4ff";ctx.lineWidth=1.5;ctx.stroke()}}
+function onSession(d){$("track").textContent=d.track||"---";$("car").textContent=d.car||"---";proj=d.map;trail=[];if(proj)loadMap()}
+function onTelemetry(d){if(d.status==="LIVE")$("overlay").classList.add("hidden");$("speed").textContent=Math.round(d.speed_kmh);$("rpm").textContent=d.rpm;$("gear").textContent=d.gear;$("pos").textContent=d.position||"-";$("sector").textContent=(d.sector|0)+1;$("cur").textContent=d.current_time||"-:--";$("last").textContent=d.last_time||"-:--";$("best").textContent=d.best_time||"-:--";$("gas").style.width=Math.round(d.gas*100)+"%";$("brake").style.width=Math.round(d.brake*100)+"%";$("lapc").textContent="LAP "+(d.completed_laps||0);$("smode").textContent=d.session||"";const dv=$("delta");dv.classList.remove("pos","neg");if(d.delta==null)dv.textContent="---";else{dv.textContent=(d.delta>0?"+":"")+d.delta.toFixed(3);dv.classList.add(d.delta>0?"pos":"neg")}if(d.speed_kmh>10){if(d.speed_kmh>vmax)vmax=d.speed_kmh;vsum+=d.speed_kmh;vcount++}$("vmax").textContent=Math.round(vmax);$("vavg").textContent=vcount?Math.round(vsum/vcount):"-";if(d.fuel>maxFuel)maxFuel=d.fuel;$("fv").textContent=d.fuel.toFixed(1);$("fb").style.width=Math.round(d.fuel/maxFuel*100)+"%";(d.tyre_temp||[]).forEach((t,i)=>{const e=$("t"+i);if(e){e.textContent=Math.round(t)+"\u00B0";e.className="tyre "+tc(t)}});if(proj&&d.coords&&(d.coords[0]||d.coords[1])){if(d.completed_laps!==lastLap){trail=[];lastLap=d.completed_laps;vmax=0;vsum=0;vcount=0}trail.push(d.coords);if(trail.length>1500)trail.shift();redraw()}}
+function prepend(n){const f=$("feed");if(f.firstChild&&f.firstChild.classList&&f.firstChild.classList.contains("muted"))f.innerHTML="";f.insertBefore(n,f.firstChild);while(f.children.length>30)f.removeChild(f.lastChild)}
+function lapCard(d){const c=document.createElement("div");c.className="card";const mm=Math.floor(d.time_ms/60000),ss=((d.time_ms%60000)/1000).toFixed(3).padStart(6,"0");const pb=d.is_personal_best?'<span class="pb">PB!</span>':"";const v=d.valid?"":'<span style="color:var(--bad)"> INV</span>';let h=`<div class="ch"><b>L${d.number} ${mm}:${ss}${v}</b>${pb}</div>`;if(d.corner_losses&&d.corner_losses.length)h+=`<div class="loss">${d.corner_losses.map(l=>l.corner+" +"+l.delta_s.toFixed(2)+"s").join(" | ")}</div>`;if(d.sectors_ms&&d.sectors_ms.length)h+=`<div class="adv" style="color:var(--dim)">S: ${d.sectors_ms.map(s=>(s/1000).toFixed(3)).join(" / ")}</div>`;c.innerHTML=h;return c}
+function onAdvice(d){if(!d.messages||!d.messages.length)return;const c=document.createElement("div");c.className="card ai";c.innerHTML=`<div class="ch"><b>Engineer L${d.lap}</b><span style="color:var(--accent)">AI</span></div>`+d.messages.map(m=>`<div class="adv">${m}</div>`).join("");prepend(c)}
+function onStrategy(d){const c=document.createElement("div");c.className="card strategy";c.innerHTML=`<div class="ch"><b>Strategy L${d.lap}</b></div><div class="adv">${d.fuel.message}</div><div class="adv">${d.tyres.message}</div><div class="adv">${d.pit.message}</div>`;prepend(c)}
+function onCoaching(d){const c=document.createElement("div");c.className="card coaching";c.innerHTML=`<div class="adv">${d.text}</div>`;prepend(c)}
+ws.onmessage=e=>{const d=JSON.parse(e.data);if(d.type==="session")onSession(d);else if(d.type==="telemetry")onTelemetry(d);else if(d.type==="lap")prepend(lapCard(d));else if(d.type==="advice")onAdvice(d);else if(d.type==="strategy")onStrategy(d);else if(d.type==="coaching")onCoaching(d)};
+window.addEventListener("resize",redraw);
+</script>
 </body>
 </html>
