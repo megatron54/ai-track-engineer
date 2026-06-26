@@ -21,12 +21,14 @@ from src.telemetry.models import ACGraphics, TelemetryFrame
 class LapSegmenter:
     """Detect completed laps from a sequence of telemetry frames."""
 
-    def __init__(self) -> None:
+    def __init__(self, *, min_lap_time_ms: int = 60_000) -> None:
+        self._min_lap_time_ms = min_lap_time_ms
         self._prev_completed_laps: int | None = None
         self._prev_sector_index: int | None = None
         self._sector_times_ms: list[int] = []
         self._lap_started_at: float = 0.0
         self._lap_valid: bool = True
+        self._tyres_out_max: int = 0
 
     def process(self, frame: TelemetryFrame) -> Lap | None:
         """Feed one frame; return a :class:`Lap` if one just completed.
@@ -55,6 +57,9 @@ class LapSegmenter:
             lap = self._finish_lap(frame)
             self._prev_completed_laps = graphics.completed_laps
             self._begin_lap(frame)
+            # Reject impossibly short laps (pit exits, teleports, etc).
+            if lap.lap_time_ms > 0 and lap.lap_time_ms < self._min_lap_time_ms:
+                return lap.model_copy(update={"valid": False})
             return lap
         return None
 

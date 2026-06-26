@@ -32,27 +32,27 @@ def _run_pipeline(pipeline: AnalysisPipeline, *, frames: int) -> list[LapReport]
 
 
 def test_pipeline_emits_report_per_lap() -> None:
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=100)  # 5s sim / 1s laps -> ~4-5 laps
     assert len(reports) >= 3
     assert [r.lap.lap_number for r in reports] == sorted(r.lap.lap_number for r in reports)
 
 
 def test_first_valid_lap_is_personal_best() -> None:
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=60)
     assert reports[0].is_personal_best is True
 
 
 def test_reports_include_tyre_evaluation() -> None:
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=60)
     assert reports[0].tyre_report is not None
     assert len(reports[0].tyre_report.statuses) == 4
 
 
 def test_later_laps_have_corner_deltas_vs_best() -> None:
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=120)
     # The first lap has no reference; a subsequent lap is compared to the best.
     assert reports[0].corner_losses == ()
@@ -65,13 +65,13 @@ def test_later_laps_have_corner_deltas_vs_best() -> None:
 
 def test_engine_monitor_alerts_flow_through() -> None:
     # max_rpm low enough that the mock's RPM trips an over-rev somewhere.
-    pipeline = AnalysisPipeline(_TRACK, engine_monitor=EngineMonitor(3000))
+    pipeline = AnalysisPipeline(_TRACK, engine_monitor=EngineMonitor(3000), min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=80)
     assert any(r.engine_alerts for r in reports)
 
 
 def test_recommendations_are_present_when_issues_exist() -> None:
-    pipeline = AnalysisPipeline(_TRACK, engine_monitor=EngineMonitor(2600))
+    pipeline = AnalysisPipeline(_TRACK, engine_monitor=EngineMonitor(2600), min_lap_time_ms=0)
     reports = _run_pipeline(pipeline, frames=80)
     assert any(r.recommendations for r in reports)
 
@@ -80,7 +80,7 @@ def _pipeline_with_reference() -> AnalysisPipeline:
     """Run the mock until the pipeline has a personal-best reference lap."""
     source = MockTelemetrySource(dt=0.05, lap_time_s=1.0)
     source.connect()
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     for _ in range(60):
         pipeline.process(source.read_frame())
         if pipeline.has_reference_lap:
@@ -90,7 +90,7 @@ def _pipeline_with_reference() -> AnalysisPipeline:
 
 
 def test_live_delta_is_none_without_reference() -> None:
-    pipeline = AnalysisPipeline(_TRACK)
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
     assert pipeline.has_reference_lap is False
     assert pipeline.live_delta(make_frame()) is None
 
