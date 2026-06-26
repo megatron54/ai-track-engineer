@@ -17,6 +17,7 @@ from src.dashboard.hub import TelemetryHub
 from src.dashboard.serialization import lap_event, session_event, telemetry_event
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
+from src.storage.session_recorder import SessionRecorder
 from src.storage.sqlite_client import SqliteStore
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.source import TelemetrySource
@@ -54,6 +55,7 @@ async def run_session(
     engine_monitor: EngineMonitor | None = None,
     store: SqliteStore | None = None,
     session_id: str | None = None,
+    recorder: SessionRecorder | None = None,
     max_frames: int | None = None,
     telemetry_every: int = 1,
 ) -> int:
@@ -91,9 +93,12 @@ async def run_session(
     try:
         async for frame in source.stream(hz, max_frames=max_frames, on_error="skip"):
             report = pipeline.process(frame)
+            delta = pipeline.live_delta(frame)
             frames += 1
             if frames % telemetry_every == 0:
-                hub.publish(telemetry_event(frame, delta=pipeline.live_delta(frame)))
+                hub.publish(telemetry_event(frame, delta=delta))
+            if recorder is not None:
+                recorder.write(frame, delta=delta)
             if report is not None:
                 hub.publish(lap_event(report))
                 if store is not None and session_id is not None:
