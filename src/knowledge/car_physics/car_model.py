@@ -11,6 +11,7 @@ import math
 from pathlib import Path
 
 from src.knowledge.car_physics.car_parser import CarSpec, Drivetrain
+from src.knowledge.car_physics.chassis_parsers import AeroSpec, BrakeSpec, SuspensionSpec
 from src.knowledge.car_physics.power_parser import PowerCurve
 
 _RPM_TO_RAD_S = 2.0 * math.pi / 60.0
@@ -20,11 +21,20 @@ class CarPhysicsModel:
     """Combined view of a car's physics data."""
 
     def __init__(
-        self, car: CarSpec, drivetrain: Drivetrain, power: PowerCurve | None
+        self,
+        car: CarSpec,
+        drivetrain: Drivetrain,
+        power: PowerCurve | None,
+        aero: AeroSpec | None = None,
+        brakes: BrakeSpec | None = None,
+        suspension: SuspensionSpec | None = None,
     ) -> None:
         self.car = car
         self.drivetrain = drivetrain
         self.power = power
+        self.aero = aero
+        self.brakes = brakes
+        self.suspension = suspension
 
     @classmethod
     def from_dir(cls, data_dir: str | Path) -> CarPhysicsModel:
@@ -34,7 +44,13 @@ class CarPhysicsModel:
         drivetrain = Drivetrain.from_text(_read(path / "drivetrain.ini"))
         power_text = _read(path / "power.lut")
         power = PowerCurve.from_text(power_text) if power_text else None
-        return cls(car, drivetrain, power)
+        aero_text = _read(path / "aero.ini")
+        aero = AeroSpec.from_text(aero_text) if aero_text else None
+        brakes_text = _read(path / "brakes.ini")
+        brakes = BrakeSpec.from_text(brakes_text) if brakes_text else None
+        susp_text = _read(path / "suspensions.ini")
+        suspension = SuspensionSpec.from_text(susp_text) if susp_text else None
+        return cls(car, drivetrain, power, aero, brakes, suspension)
 
     @property
     def peak_power_hp(self) -> float | None:
