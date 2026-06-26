@@ -17,8 +17,13 @@ from src.dashboard.hub import TelemetryHub
 from src.dashboard.serialization import lap_event, session_event, telemetry_event
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
+from src.processing.corner_coach import CornerCoach
+from src.processing.message_queue import MessageQueue
 from src.storage.session_recorder import SessionRecorder
 from src.storage.sqlite_client import SqliteStore
+from src.strategy.fuel_strategy import FuelStrategy
+from src.strategy.pit_strategy import pit_recommendation
+from src.strategy.tyre_strategy import TyreStrategy
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.source import TelemetrySource
 
@@ -88,6 +93,13 @@ async def run_session(
     if state.session is not None:
         hub.publish(state.session)
 
+    # Strategy + real-time coaching (initialised here, not injected, to keep
+    # the function signature stable; tests verify components individually).
+    fuel = FuelStrategy()
+    tyres = TyreStrategy()
+    coach = CornerCoach(track)
+    msg_queue = MessageQueue(cooldown_s=6.0)
+
     advice_tasks: set[asyncio.Task[None]] = set()
     frames = 0
     try:
@@ -95,16 +107,80 @@ async def run_session(
             report = pipeline.process(frame)
             delta = pipeline.live_delta(frame)
             frames += 1
+
+            # Corner coach: post-corner + brake warnings.
+            if pipeline.has_reference_lap:
+                coach_msgs = coach.process(
+                    frame.graphics.normalized_car_position,
+                    frame.physics.speed_kmh,
+                    frame.graphics.current_time_ms / 1000.0,
+                    frame.timestamp,
+                )
+                for msg in coach_msgs:
+                    msg_queue.push(msg)
+
+            # Drain the priority queue and publish coaching messages.
+            delivered = msg_queue.pop(now=frame.timestamp)
+            if delivered is not None:
+                hub.publish({
+                    "type": "coaching",
+                    "priority": delivered.priority.name,
+                    "text": delivered.text,
+                    "corner": delivered.corner,
+                })
+
             if frames % telemetry_every == 0:
                 hub.publish(telemetry_event(frame, delta=delta))
             if recorder is not None:
                 recorder.write(frame, delta=delta)
             if report is not None:
                 hub.publish(lap_event(report))
+
+                # Per-lap strategy updates.
+                fuel.record_lap_fuel(frame.physics.fuel)
+                wear = frame.physics.tyre_wear
+                tyres.record_wear(sum(wear.as_tuple()) / 4.0)
+                fuel_report = fuel.report()
+                tyre_report = tyres.report()
+                pit = pit_recommendation(
+                    current_lap=report.lap.lap_number,
+                    fuel=fuel_report,
+                    tyres=tyre_report,
+                )
+                hub.publish({
+                    "type": "strategy",
+                    "lap": report.lap.lap_number,
+                    "fuel": {
+                        "remaining": fuel_report.fuel_remaining,
+                        "per_lap": fuel_report.consumption_per_lap,
+                        "laps_left": fuel_report.laps_remaining,
+                        "status": fuel_report.status.value,
+                        "message": fuel_report.message,
+                    },
+                    "tyres": {
+                        "wear_pct": tyre_report.avg_wear_pct,
+                        "rate": tyre_report.wear_rate_per_lap,
+                        "advice": tyre_report.advice.value,
+                        "message": tyre_report.message,
+                    },
+                    "pit": {
+                        "advice": pit.advice.value,
+                        "trigger": pit.trigger,
+                        "lap": pit.recommended_lap,
+                        "message": pit.message,
+                    },
+                })
+
+                # Update corner coach reference on new PB.
+                if report.is_personal_best and pipeline._best_trace is not None:  # noqa: SLF001
+                    coach.set_reference(pipeline._best_trace)  # noqa: SLF001
+
                 if store is not None and session_id is not None:
                     await store.record_lap(session_id, report.lap)
                 if advisor is not None:
-                    task = asyncio.create_task(_publish_ai_advice(advisor, report, track, hub))
+                    task = asyncio.create_task(
+                        _publish_ai_advice(advisor, report, track, hub)
+                    )
                     advice_tasks.add(task)
                     task.add_done_callback(advice_tasks.discard)
         # Let any in-flight advice finish on normal completion (e.g. tests).
