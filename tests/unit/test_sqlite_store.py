@@ -60,6 +60,24 @@ async def test_best_lap_none_when_no_valid_laps(store: SqliteStore) -> None:
     assert await store.best_lap(session.id) is None
 
 
+async def test_best_lap_ms_for_spans_sessions_and_filters(store: SqliteStore) -> None:
+    s1 = await store.create_session(track="spa", car="f2004", started_at=100.0)
+    s2 = await store.create_session(track="spa", car="f2004", started_at=200.0)
+    other = await store.create_session(track="spa", car="gt3", started_at=300.0)
+    await store.record_lap(s1.id, Lap(lap_number=1, lap_time_ms=102_000, valid=True))
+    await store.record_lap(s2.id, Lap(lap_number=1, lap_time_ms=101_313, valid=True))  # fastest
+    await store.record_lap(s2.id, Lap(lap_number=2, lap_time_ms=99_999, valid=False))  # invalid
+    await store.record_lap(s2.id, Lap(lap_number=3, lap_time_ms=30_000, valid=True))  # too short
+    await store.record_lap(other.id, Lap(lap_number=1, lap_time_ms=95_000, valid=True))  # other car
+
+    assert await store.best_lap_ms_for(track="spa", car="f2004") == 101_313
+
+
+async def test_best_lap_ms_for_none_when_no_match(store: SqliteStore) -> None:
+    await store.create_session(track="spa", car="f2004", started_at=0.0)
+    assert await store.best_lap_ms_for(track="monza", car="f2004") is None
+
+
 async def test_record_lap_is_idempotent_per_lap_number(store: SqliteStore) -> None:
     session = await store.create_session(track="t", car="c", started_at=0.0)
     await store.record_lap(session.id, Lap(lap_number=1, lap_time_ms=90_000))

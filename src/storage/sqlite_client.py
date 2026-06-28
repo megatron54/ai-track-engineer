@@ -115,6 +115,27 @@ class SqliteStore:
             row = await cursor.fetchone()
         return self._row_to_lap(row) if row is not None else None
 
+    async def best_lap_ms_for(
+        self, *, track: str, car: str, min_lap_time_ms: int = 60_000
+    ) -> int | None:
+        """Fastest valid lap time (ms) ever recorded for a track/car.
+
+        Scans every session for the given track and car so the dashboard can
+        show an all-time personal best, not just the current session's best.
+        Returns ``None`` when no qualifying lap exists.
+        """
+        db = self._require_db()
+        async with db.execute(
+            "SELECT MIN(l.lap_time_ms) AS best FROM laps l "
+            "JOIN sessions s ON s.id = l.session_id "
+            "WHERE s.track = ? AND s.car = ? AND l.valid = 1 AND l.lap_time_ms >= ?",
+            (track, car, min_lap_time_ms),
+        ) as cursor:
+            row = await cursor.fetchone()
+        if row is None or row["best"] is None:
+            return None
+        return int(row["best"])
+
     async def get_session(self, session_id: str) -> Session | None:
         """Return a session by id, or ``None`` if it does not exist."""
         db = self._require_db()

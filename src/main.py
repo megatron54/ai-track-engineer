@@ -28,6 +28,7 @@ from src.telemetry import (
     TelemetrySource,
 )
 from src.telemetry.models import ACStaticInfo
+from src.telemetry.shm_reader import SharedMemoryUnavailableError
 
 app = typer.Typer(
     name="ai-track-engineer",
@@ -170,6 +171,31 @@ def _load_track_info(static: ACStaticInfo) -> TrackInfo:  # pragma: no cover - i
     return TrackInfo(track_id=label, name=label)
 
 
+async def _connect_when_ready(  # pragma: no cover - integration entry point
+    source: TelemetrySource, *, poll_seconds: float = 2.0
+) -> ACStaticInfo:
+    """Connect to *source*, waiting for Assetto Corsa if it is not ready yet.
+
+    The live shared-memory source raises :class:`SharedMemoryUnavailableError`
+    until AC has created its regions, so we poll instead of failing. This lets
+    the operator start the dashboard before or after launching the game, and it
+    never pre-creates the shared-memory regions (which would crash AC).
+    """
+    log = get_logger("analysis")
+    waiting = False
+    while True:
+        try:
+            return source.connect()
+        except SharedMemoryUnavailableError:
+            if not waiting:
+                log.info(
+                    "waiting-for-ac",
+                    note="start Assetto Corsa and enter a session to begin",
+                )
+                waiting = True
+            await asyncio.sleep(poll_seconds)
+
+
 async def _capture_and_analyze(  # pragma: no cover - integration entry point
     source: TelemetrySource,
     hub: TelemetryHub,
@@ -178,7 +204,7 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
     hz: int,
 ) -> None:
     """Connect, load track + map, and stream the session's events to the hub."""
-    static = source.connect()
+    static = await _connect_when_ready(source)
     track = _load_track_info(static)
     track_dir = _track_dir_for(static)
     if track_dir is not None:
@@ -205,6 +231,9 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
             ai_model=settings.ollama.model,
             session_id=session.id,
         )
+        best_ever_ms = await store.best_lap_ms_for(
+            track=track.track_id, car=static.car_model
+        )
         sessions_dir = Path("data/sessions")
         recorder = SessionRecorder(
             sessions_dir, track.track_id, static.car_model, session.id
@@ -223,6 +252,7 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
                 store=store,
                 session_id=session.id,
                 recorder=recorder,
+                best_ever_ms=best_ever_ms,
             )
             log.info("recording-complete", rows=recorder.rows_written)
 
