@@ -106,6 +106,8 @@ class _MappedView:  # pragma: no cover - Windows-only mapped view
         return data
 
     def close(self) -> None:
+        if sys.platform != "win32":  # pragma: no cover - never constructed off Windows
+            return
         import ctypes
 
         if self._address is not None:
