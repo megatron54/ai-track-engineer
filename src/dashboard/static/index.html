@@ -115,6 +115,7 @@ td.inv{color:var(--bad)}
 <span class="tag" id="car">--</span>
 <span style="flex:1"></span>
 <span class="tag" id="smode">--</span>
+<span class="tag" id="emode" title="Engineer mode" style="background:#1f6feb">--</span>
 <span class="tag" id="pos">P-</span>
 <span class="tag" id="lapc">LAP 0</span>
 </header>
@@ -294,7 +295,8 @@ function feed(node){const f=$("feed");if(f.firstChild&&f.firstChild.className===
 function onAdvice(d){if(!d.messages||!d.messages.length)return;const c=document.createElement("div");c.className="card ai";c.innerHTML=`<div class="hd"><b>Engineer · Lap ${d.lap}</b><span>AI</span></div>`+d.messages.map(m=>`<div class="body">${m}</div>`).join("");feed(c)}
 function onStrategy(d){const c=document.createElement("div");c.className="card strategy";c.innerHTML=`<div class="hd"><b>Strategy · Lap ${d.lap}</b></div><div class="body">${d.fuel.message}</div><div class="body">${d.tyres.message}</div><div class="body">${d.pit.message}</div>`;feed(c)}
 function onCoaching(d){const c=document.createElement("div");c.className="card coaching";c.innerHTML=`<div class="body">${d.text}</div>`;feed(c)}
-ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching}[d.type]||(()=>{}))(d)};
+function onMode(d){const e=$("emode");e.textContent=d.mode.toUpperCase();e.title=`${d.priority} — ${d.personality}`}
+ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching,mode:onMode}[d.type]||(()=>{}))(d)};
 setTimeout(()=>{mdpr=fit(mapCv);tdpr=fit(trCv);drawMap();drawTrace()},80);
 </script>
 </body>

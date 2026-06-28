@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from src.analysis.engine_monitor import EngineMonitor
 from src.dashboard.hub import TelemetryHub
-from src.dashboard.pump import run_session
+from src.dashboard.pump import _mode_event, _should_deliver, run_session
 from src.dashboard.state import DashboardState
 from src.knowledge.models import Corner, TrackInfo
+from src.processing.message_queue import MessagePriority, PriorityMessage
+from src.strategy.mode_manager import EngineerMode, profile_for
 from src.telemetry.mock import MockTelemetrySource
+from src.telemetry.shm_structs import ACSessionType
 
 _TRACK = TrackInfo(
     track_id="ks_laguna_seca",
@@ -129,3 +132,48 @@ async def test_run_session_persists_laps_to_store() -> None:
     await store.close()
     assert len(laps) >= 2
     assert all(lap.lap_number > 0 for lap in laps)
+
+
+def _coaching_message(priority: MessagePriority) -> PriorityMessage:
+    return PriorityMessage(priority=priority, timestamp=0.0, text="brake later", corner=None)
+
+
+def test_mode_event_maps_session_type() -> None:
+    event = _mode_event(ACSessionType.QUALIFY)
+    assert event["type"] == "mode"
+    assert event["mode"] == "qualifying"
+    assert event["max_messages_per_lap"] == 2
+    assert _mode_event(ACSessionType.RACE)["mode"] == "race"
+    assert _mode_event(ACSessionType.PRACTICE)["mode"] == "practice"
+
+
+def test_should_deliver_caps_messages_per_lap() -> None:
+    practice = profile_for(EngineerMode.PRACTICE)
+    assert _should_deliver(practice, _coaching_message(MessagePriority.NORMAL), 0) is True
+    assert (
+        _should_deliver(
+            practice, _coaching_message(MessagePriority.NORMAL), practice.max_messages_per_lap
+        )
+        is False
+    )
+
+
+def test_should_deliver_silences_low_priority_in_qualifying() -> None:
+    quali = profile_for(EngineerMode.QUALIFYING)
+    assert quali.silence_during_hotlap is True
+    assert _should_deliver(quali, _coaching_message(MessagePriority.NORMAL), 0) is False
+    assert _should_deliver(quali, _coaching_message(MessagePriority.HIGH), 0) is True
+
+
+async def test_run_session_publishes_mode_event() -> None:
+    source = MockTelemetrySource()
+    static = source.connect()
+    hub = TelemetryHub(queue_size=1000)
+    state = DashboardState()
+    queue = hub.subscribe()
+
+    await run_session(source, hub, state, _TRACK, static, hz=2000, max_frames=10)
+
+    modes = [m for m in _drain(queue) if m["type"] == "mode"]
+    assert modes
+    assert modes[0]["mode"] in {"practice", "qualifying", "race"}
