@@ -98,17 +98,39 @@ def test_live_delta_is_none_without_reference() -> None:
 def test_live_delta_is_positive_when_slower_than_best() -> None:
     pipeline = _pipeline_with_reference()
     assert pipeline.has_reference_lap is True
-    # A huge current lap time mid-track means we are well behind the best lap.
-    graphics = make_graphics(normalized_car_position=0.5, current_time_ms=999_999)
-    delta = pipeline.live_delta(make_frame(graphics=graphics))
+    start = pipeline._lap_start_timestamp  # noqa: SLF001
+    # 10 s into the current lap but only at mid-track: well behind the ~1 s best.
+    graphics = make_graphics(normalized_car_position=0.5)
+    delta = pipeline.live_delta(make_frame(timestamp=start + 10.0, graphics=graphics))
     assert delta is not None
     assert delta > 0
 
 
 def test_live_delta_near_zero_for_repeatable_lap() -> None:
     pipeline = _pipeline_with_reference()
-    # The deterministic mock repeats: at the lap start the delta is tiny.
-    graphics = make_graphics(normalized_car_position=0.0, current_time_ms=0)
-    delta = pipeline.live_delta(make_frame(graphics=graphics))
+    start = pipeline._lap_start_timestamp  # noqa: SLF001
+    # At the lap start (position 0, ~0 elapsed) the delta is tiny.
+    graphics = make_graphics(normalized_car_position=0.0)
+    delta = pipeline.live_delta(make_frame(timestamp=start, graphics=graphics))
+    assert delta is not None
+    assert abs(delta) < 0.5
+
+
+def test_live_delta_none_before_lap_start_timestamp() -> None:
+    pipeline = _pipeline_with_reference()
+    start = pipeline._lap_start_timestamp  # noqa: SLF001
+    # A frame captured before the current lap began cannot have a valid delta.
+    graphics = make_graphics(normalized_car_position=0.2)
+    assert pipeline.live_delta(make_frame(timestamp=start - 5.0, graphics=graphics)) is None
+
+
+def test_live_delta_reanchors_on_start_finish_crossing() -> None:
+    pipeline = _pipeline_with_reference()
+    # Simulate a hotlap restart: position wraps ~1 -> ~0 with no completed lap.
+    pipeline.process(make_frame(timestamp=500.0, normalized_car_position=0.97))
+    pipeline.process(make_frame(timestamp=501.0, normalized_car_position=0.02))
+    assert pipeline._lap_start_timestamp == 501.0  # noqa: SLF001
+    # Elapsed time must restart from the crossing, not keep accumulating.
+    delta = pipeline.live_delta(make_frame(timestamp=501.0, normalized_car_position=0.0))
     assert delta is not None
     assert abs(delta) < 0.5
