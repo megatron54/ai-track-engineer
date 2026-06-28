@@ -18,8 +18,15 @@ from src.knowledge.models import TrackInfo
 from src.telemetry.models import TelemetryFrame
 
 
-def session_event(track: TrackInfo, *, car: str) -> dict[str, Any]:
-    """Build the ``session`` envelope describing the active track and car."""
+def session_event(
+    track: TrackInfo, *, car: str, best_ever_ms: int | None = None
+) -> dict[str, Any]:
+    """Build the ``session`` envelope describing the active track and car.
+
+    ``best_ever_ms`` is the all-time personal-best lap (ms) for this track/car
+    from the lap store, so the dashboard can show a real historical best rather
+    than only Assetto Corsa's current-session best.
+    """
     projection = track.map
     map_payload: dict[str, Any] | None = None
     if projection is not None:
@@ -37,6 +44,7 @@ def session_event(track: TrackInfo, *, car: str) -> dict[str, Any]:
         "track_id": track.track_id,
         "car": car,
         "length_m": round(track.length_m, 1),
+        "best_ever_ms": best_ever_ms,
         "corners": [
             {"index": c.index, "name": c.name, "entry": c.entry, "exit": c.exit}
             for c in track.corners
@@ -67,6 +75,10 @@ def telemetry_event(frame: TelemetryFrame, *, delta: float | None = None) -> dic
         "best_time": graphics.best_time,
         "completed_laps": graphics.completed_laps,
         "tyre_temp": [round(v, 1) for v in physics.tyre_core_temp.as_tuple()],
+        "tyre_wear": [round(v, 2) for v in physics.tyre_wear.as_tuple()],
+        "steer_angle": round(physics.steer_angle, 3),
+        "g_lat": round(physics.g_force_lateral, 3),
+        "g_lon": round(physics.g_force_longitudinal, 3),
         "delta": round(delta, 3) if delta is not None else None,
         "status": graphics.status.name,
         "session": graphics.session_type.name,
