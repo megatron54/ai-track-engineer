@@ -9,6 +9,7 @@ closing the source.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from src.ai.advisor import RaceEngineerAdvisor
 from src.analysis.engine_monitor import EngineMonitor
@@ -18,14 +19,42 @@ from src.dashboard.serialization import lap_event, session_event, telemetry_even
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
 from src.processing.corner_coach import CornerCoach
-from src.processing.message_queue import MessageQueue
+from src.processing.message_queue import MessagePriority, MessageQueue, PriorityMessage
 from src.storage.session_recorder import SessionRecorder
 from src.storage.sqlite_client import SqliteStore
 from src.strategy.fuel_strategy import FuelStrategy
+from src.strategy.mode_manager import ModeProfile, mode_from_session, profile_for
 from src.strategy.pit_strategy import pit_recommendation
+from src.strategy.session_detector import SessionModeTracker
 from src.strategy.tyre_strategy import TyreStrategy
 from src.telemetry.models import ACStaticInfo
+from src.telemetry.shm_structs import ACSessionType
 from src.telemetry.source import TelemetrySource
+
+
+def _mode_event(session_type: ACSessionType) -> dict[str, Any]:
+    """Build a ``mode`` envelope describing the active engineer personality."""
+    profile = profile_for(mode_from_session(session_type))
+    return {
+        "type": "mode",
+        "mode": profile.mode.value,
+        "priority": profile.priority,
+        "personality": profile.personality,
+        "max_messages_per_lap": profile.max_messages_per_lap,
+    }
+
+
+def _should_deliver(
+    profile: ModeProfile, message: PriorityMessage, sent_this_lap: int
+) -> bool:
+    """Whether a coaching message fits the session mode's budget.
+
+    Caps messages per lap and, when the mode asks for hotlap silence (qualifying),
+    lets only high-urgency (CRITICAL/HIGH) messages through.
+    """
+    if sent_this_lap >= profile.max_messages_per_lap:
+        return False
+    return not (profile.silence_during_hotlap and message.priority > MessagePriority.HIGH)
 
 
 async def _publish_ai_advice(
@@ -101,6 +130,11 @@ async def run_session(
     coach = CornerCoach(track)
     msg_queue = MessageQueue(cooldown_s=6.0)
 
+    # Engineer mode: Practice/Qualify/Race personality + per-lap message budget.
+    mode_tracker = SessionModeTracker()
+    messages_this_lap = 0
+    last_message_lap = -1
+
     advice_tasks: set[asyncio.Task[None]] = set()
     frames = 0
     try:
@@ -108,6 +142,15 @@ async def run_session(
             report = pipeline.process(frame)
             delta = pipeline.live_delta(frame)
             frames += 1
+
+            # Engineer mode: publish on change, reset the per-lap budget on a
+            # new lap, and adapt how many coaching messages get through.
+            if mode_tracker.update(frame.graphics) is not None:
+                hub.publish(_mode_event(frame.graphics.session_type))
+            profile = profile_for(mode_from_session(frame.graphics.session_type))
+            if frame.graphics.completed_laps != last_message_lap:
+                last_message_lap = frame.graphics.completed_laps
+                messages_this_lap = 0
 
             # Corner coach: post-corner + brake warnings.
             if pipeline.has_reference_lap:
@@ -120,15 +163,16 @@ async def run_session(
                 for msg in coach_msgs:
                     msg_queue.push(msg)
 
-            # Drain the priority queue and publish coaching messages.
+            # Drain the priority queue and publish coaching within the mode budget.
             delivered = msg_queue.pop(now=frame.timestamp)
-            if delivered is not None:
+            if delivered is not None and _should_deliver(profile, delivered, messages_this_lap):
                 hub.publish({
                     "type": "coaching",
                     "priority": delivered.priority.name,
                     "text": delivered.text,
                     "corner": delivered.corner,
                 })
+                messages_this_lap += 1
 
             if frames % telemetry_every == 0:
                 hub.publish(telemetry_event(frame, delta=delta))
