@@ -15,15 +15,15 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 
 | Phase | Capability | Status |
 |-------|------------|--------|
-| 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Done (live map + timing UI; React optional) |
+| 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Done (responsive F1 dashboard; crash-safe shared memory) |
 | 2 | Per-corner analysis + lap comparison + tyre/engine monitors | ✅ Done |
 | 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done |
-| 4 | Real-time in-corner feedback | 🚧 Live delta vs best |
+| 4 | Real-time in-corner feedback | ✅ Done (accurate live delta + corner coach, mode-aware) |
 | 5 | Pattern detection + session reports | ✅ Session reports (patterns pending) |
 | 6 | Bidirectional voice assistant | ⏳ Planned |
-| 7 | Predictive ML models | ⏳ Planned |
-| 8 | Race strategist (fuel, pit, tyres) | 🚧 Fuel + session detection |
-| 9 | Physics-based Setup Lab (digital twin) | 🚧 Power/LUT parsing (packed `.acd` cars pending) |
+| 7 | Predictive ML models | ✅ Corner-time predictor (trained on real laps) |
+| 8 | Race strategist (fuel, pit, tyres) | 🚧 Fuel + tyre + pit live (opponent gaps / overcut-undercut pending) |
+| 9 | Physics-based Setup Lab (digital twin) | 🚧 Setup I/O + consistency (physics twin dormant; packed `.acd` pending) |
 
 ## Tech stack
 
@@ -31,8 +31,8 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 - **Telemetry:** Shared Memory (`mmap` / `ctypes`) at 60 Hz
 - **AI:** Local LLM via [Ollama](https://ollama.com) (offline, private)
 - **Backend:** FastAPI + WebSocket
-- **Frontend:** React + Vite (added in Phase 1)
-- **Storage:** InfluxDB 2.x (time-series) + SQLite (metadata)
+- **Frontend:** Embedded HTML + Canvas dashboard (React + Vite planned)
+- **Storage:** SQLite (metadata) + CSV session recordings (InfluxDB adapter optional)
 - **Voice:** faster-whisper (STT), Piper/Edge (TTS), Silero VAD
 - **ML:** scikit-learn + XGBoost
 
