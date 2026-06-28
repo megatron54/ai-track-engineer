@@ -23,7 +23,17 @@ from src.dashboard.state import DashboardState
 
 Producer = Callable[[], Coroutine[Any, Any, None]]
 
-_INDEX_HTML = (Path(__file__).parent / "static" / "index.html").read_text(encoding="utf-8")
+_INDEX_PATH = Path(__file__).parent / "static" / "index.html"
+
+
+def _read_index() -> str:
+    """Read the dashboard HTML from disk on each request.
+
+    Reading per request (instead of caching at import time) means UI edits to
+    ``static/index.html`` are picked up on the next page load without a server
+    restart. The file is small and loaded infrequently, so the cost is trivial.
+    """
+    return _INDEX_PATH.read_text(encoding="utf-8")
 
 
 def create_app(
@@ -64,7 +74,7 @@ def create_app(
 
     @app.get("/", response_class=HTMLResponse)
     async def index() -> str:
-        return _INDEX_HTML
+        return _read_index()
 
     @app.websocket("/ws/telemetry")
     async def telemetry_ws(websocket: WebSocket) -> None:
