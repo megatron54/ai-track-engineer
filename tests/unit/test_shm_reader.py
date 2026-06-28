@@ -8,6 +8,7 @@ import sys
 import pytest
 from src.telemetry.shm_reader import (
     SharedMemoryTelemetrySource,
+    SharedMemoryUnavailableError,
     UnsupportedPlatformError,
     open_windows_shared_memory,
 )
@@ -123,6 +124,28 @@ def test_partial_connect_failure_closes_opened_maps() -> None:
 
     source = SharedMemoryTelemetrySource(opener=flaky_opener)
     with pytest.raises(OSError, match="mapping unavailable"):
+        source.connect()
+    assert physics_buffer.was_closed is True
+
+
+def test_unavailable_error_is_telemetry_source_error() -> None:
+    """'AC not running' must be catchable as a telemetry error so callers retry."""
+    assert issubclass(SharedMemoryUnavailableError, TelemetrySourceError)
+
+
+def test_connect_propagates_unavailable_and_closes_maps() -> None:
+    """A missing region raises SharedMemoryUnavailableError and leaks no maps."""
+    physics_buffer = _TrackingBuffer(bytes(SPageFilePhysics()))
+    calls = {"n": 0}
+
+    def opener(name: str, size: int) -> io.BytesIO:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return physics_buffer
+        raise SharedMemoryUnavailableError("Assetto Corsa is not running")
+
+    source = SharedMemoryTelemetrySource(opener=opener)
+    with pytest.raises(SharedMemoryUnavailableError):
         source.connect()
     assert physics_buffer.was_closed is True
 

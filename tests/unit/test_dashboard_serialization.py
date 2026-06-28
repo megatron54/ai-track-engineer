@@ -37,6 +37,18 @@ def test_telemetry_event_delta_none() -> None:
     assert telemetry_event(make_frame())["delta"] is None
 
 
+def test_telemetry_event_includes_steer_wear_and_gforces() -> None:
+    event = telemetry_event(make_frame())
+    assert isinstance(event["tyre_wear"], list)
+    assert len(event["tyre_wear"]) == 4
+    assert isinstance(event["tyre_temp"], list)
+    assert len(event["tyre_temp"]) == 4
+    assert "steer_angle" in event
+    assert "g_lat" in event
+    assert "g_lon" in event
+    json.dumps(event)  # must stay JSON-serialisable
+
+
 def test_lap_event_includes_advice_and_losses() -> None:
     report = LapReport(
         lap=Lap(lap_number=3, lap_time_ms=90_500, sector_times_ms=(30_000, 30_000, 30_500)),

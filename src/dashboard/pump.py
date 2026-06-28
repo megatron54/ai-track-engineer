@@ -63,6 +63,7 @@ async def run_session(
     recorder: SessionRecorder | None = None,
     max_frames: int | None = None,
     telemetry_every: int = 1,
+    best_ever_ms: int | None = None,
 ) -> int:
     """Stream a connected session, broadcasting analysis events to the hub.
 
@@ -89,7 +90,7 @@ async def run_session(
         raise ValueError("telemetry_every must be >= 1")
 
     pipeline = AnalysisPipeline(track, engine_monitor=engine_monitor)
-    state.set_session(session_event(track, car=static.car_model))
+    state.set_session(session_event(track, car=static.car_model, best_ever_ms=best_ever_ms))
     if state.session is not None:
         hub.publish(state.session)
 

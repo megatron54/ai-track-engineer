@@ -69,6 +69,19 @@ class LapTrace:
         return float(self._times[-1])
 
     @property
+    def is_clean(self) -> bool:
+        """Whether elapsed time rises monotonically along the lap.
+
+        A clean single lap has time increasing with track position. A trace
+        stitched across a mid-lap restart or teleport (e.g. AC hotlap "restart")
+        has time jump backwards, which corrupts position-based interpolation.
+        Such a trace must not be used as a delta reference.
+        """
+        if self._times.size < 2:
+            return False
+        return bool(np.all(np.diff(self._times) >= 0.0))
+
+    @property
     def start_position(self) -> float:
         return float(self._positions[0])
 

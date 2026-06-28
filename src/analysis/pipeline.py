@@ -62,7 +62,8 @@ class AnalysisPipeline:
         self._buffer: list[TelemetryFrame] = []
         self._best_trace: LapTrace | None = None
         self._best_lap_time_ms: int | None = None
-        self._lap_start_session_ms: int = 0
+        self._lap_start_timestamp: float = 0.0
+        self._last_position: float | None = None
         self._compound_detected: str | None = None
 
     def process(self, frame: TelemetryFrame) -> LapReport | None:
@@ -74,6 +75,16 @@ class AnalysisPipeline:
             opt_min, opt_max = window_for_compound(compound)
             self._tyre_model = TyreThermalModel(optimal_min=opt_min, optimal_max=opt_max)
 
+        # Re-anchor the live-delta clock whenever the car crosses the start/
+        # finish line (normalised position wraps from ~1 back to ~0). This is
+        # independent of lap *completion*, so the delta stays correct even when
+        # a lap is restarted mid-flight (e.g. AC hotlap restart or a teleport),
+        # where the segmenter never reports a finished lap.
+        position = frame.graphics.normalized_car_position
+        if self._last_position is not None and position + 0.5 < self._last_position:
+            self._lap_start_timestamp = frame.timestamp
+        self._last_position = position
+
         self._buffer.append(frame)
         lap = self._segmenter.process(frame)
         if lap is None:
@@ -84,8 +95,6 @@ class AnalysisPipeline:
         lap_frames = self._buffer[:-1]
         report = self._build_report(lap, lap_frames)
         self._buffer = [frame]
-        # Record session time at the start of the new lap for accurate delta.
-        self._lap_start_session_ms = frame.graphics.current_time_ms
         return report
 
     def live_delta(self, frame: TelemetryFrame) -> float | None:
@@ -95,15 +104,19 @@ class AnalysisPipeline:
         same normalised track position: positive means losing time, negative
         means gaining. ``None`` until a best lap exists.
 
-        AC's ``iCurrentTime`` is cumulative across the session, so the current
-        lap's elapsed time is ``iCurrentTime - _lap_start_session_ms``.
+        Both sides use the same capture clock (``frame.timestamp``): the best
+        trace is rebased to zero at its own lap start, and the current lap's
+        elapsed time is measured from ``_lap_start_timestamp`` (set when the lap
+        began). Using one monotonic clock avoids AC's ``iCurrentTime`` field,
+        whose meaning is inconsistent across laps and session resets and which
+        produced wildly wrong deltas.
         """
         if self._best_trace is None:
             return None
         position = frame.graphics.normalized_car_position
-        current_elapsed = (frame.graphics.current_time_ms - self._lap_start_session_ms) / 1000.0
+        current_elapsed = frame.timestamp - self._lap_start_timestamp
         if current_elapsed < 0:
-            return None  # session time reset (e.g. new session)
+            return None  # timestamp predates the lap start (seek / session reset)
         return current_elapsed - self._best_trace.time_at(position)
 
     @property
@@ -134,7 +147,10 @@ class AnalysisPipeline:
             )
         )
 
-        if lap.valid and is_pb and trace is not None:
+        # Only a clean, complete lap may become the delta reference. A trace
+        # stitched across a hotlap restart or teleport has non-monotonic time
+        # and would corrupt the live delta, so it is rejected here.
+        if lap.valid and is_pb and trace is not None and trace.is_clean:
             self._best_trace = trace
             self._best_lap_time_ms = lap.lap_time_ms
 

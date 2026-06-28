@@ -43,3 +43,15 @@ def test_from_frames_builds_trace() -> None:
     trace = LapTrace.from_frames(1, frames)
     assert trace.duration > 0
     assert 0.0 <= trace.start_position < trace.end_position <= 1.0
+
+
+def test_is_clean_true_for_monotonic_lap() -> None:
+    trace = LapTrace(1, [(0.0, 0.0, 100.0), (0.5, 10.0, 120.0), (0.9, 20.0, 110.0)])
+    assert trace.is_clean is True
+
+
+def test_is_clean_false_when_time_goes_backwards() -> None:
+    # Positions increase but time jumps backwards: a lap trace stitched across a
+    # mid-lap restart. Such a reference must be rejected by the delta pipeline.
+    trace = LapTrace(1, [(0.1, 50.0, 100.0), (0.2, 5.0, 120.0), (0.9, 60.0, 110.0)])
+    assert trace.is_clean is False
