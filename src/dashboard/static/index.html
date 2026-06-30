@@ -91,6 +91,13 @@ td.inv{color:var(--bad)}
 .ty .wear{height:5px;background:#0a0d11;border-radius:3px;overflow:hidden;margin-top:.25rem}
 .ty .wear>span{display:block;height:100%;background:var(--warn)}
 .ty .wpct{font-size:var(--fs-label);color:var(--dim);margin-top:.15rem}
+/* GAPS / BATTLE */
+.gaps{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}
+.gaprow{background:var(--panel2);border-radius:7px;padding:.4rem .5rem;display:flex;flex-direction:column;align-items:center;gap:.1rem;border-top:2px solid var(--border)}
+.gaprow.ahead{border-top-color:var(--good)}.gaprow.behind{border-top-color:var(--bad)}
+.gaprow .gl{font-size:var(--fs-label);color:var(--dim);text-transform:uppercase;letter-spacing:.4px}
+.gaprow .gv{font-weight:700;font-size:clamp(1rem,1.7vw,1.45rem);font-variant-numeric:tabular-nums}
+.gapnote{font-size:var(--fs-label);color:var(--dim);text-align:center;padding:.15rem .6rem .45rem}
 /* CORNER ANALYSIS + FEED */
 .corner-list,.feed{flex:1 1 auto;overflow-y:auto;min-height:0;padding:.4rem;display:flex;flex-direction:column;gap:.35rem}
 .cl-row{display:flex;justify-content:space-between;font-size:var(--fs-mono);padding:.25rem .4rem;background:var(--panel2);border-radius:5px;border-left:3px solid var(--warn)}
@@ -192,6 +199,14 @@ td.inv{color:var(--bad)}
       <div class="pad" style="border-top:1px solid var(--border);display:flex;justify-content:space-between;font-size:var(--fs-mono)">
         <span style="color:var(--dim)">Fuel</span><span class="num" id="fuel">-- L</span>
       </div>
+    </div>
+    <div class="panel">
+      <div class="t"><span>Battle · Gaps</span><span id="gappos" class="num"></span></div>
+      <div class="gaps pad">
+        <div class="gaprow ahead"><span class="gl">▲ Ahead</span><span class="gv num" id="gapAhead">—</span></div>
+        <div class="gaprow behind"><span class="gl">▼ Behind</span><span class="gv num" id="gapBehind">—</span></div>
+      </div>
+      <div class="gapnote" id="gapnote">Install the OpponentsBridge app in AC for rival gaps</div>
     </div>
     <div class="panel" style="flex:1 1 0">
       <div class="t"><span>Corner Analysis</span><span id="caLap">last lap</span></div>
@@ -296,7 +311,15 @@ function onAdvice(d){if(!d.messages||!d.messages.length)return;const c=document.
 function onStrategy(d){const c=document.createElement("div");c.className="card strategy";c.innerHTML=`<div class="hd"><b>Strategy · Lap ${d.lap}</b></div><div class="body">${d.fuel.message}</div><div class="body">${d.tyres.message}</div><div class="body">${d.pit.message}</div>`;feed(c)}
 function onCoaching(d){const c=document.createElement("div");c.className="card coaching";c.innerHTML=`<div class="body">${d.text}</div>`;feed(c)}
 function onMode(d){const e=$("emode");e.textContent=d.mode.toUpperCase();e.title=`${d.priority} — ${d.personality}`}
-ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching,mode:onMode}[d.type]||(()=>{}))(d)};
+function onGap(d){
+  const a=$("gapAhead"),b=$("gapBehind"),note=$("gapnote");
+  a.textContent=d.ahead_s!=null?d.ahead_s.toFixed(1)+"s":"—";
+  b.textContent=d.behind_s!=null?d.behind_s.toFixed(1)+"s":"—";
+  a.style.color=d.ahead_s==null?"var(--dim)":d.trend_ahead==="closing"?"var(--good)":d.trend_ahead==="opening"?"var(--dim)":"var(--txt)";
+  b.style.color=d.behind_s==null?"var(--dim)":d.trend_behind==="closing"?"var(--bad)":d.trend_behind==="opening"?"var(--dim)":"var(--txt)";
+  note.textContent=(d.message&&d.message!=="No gap data.")?d.message:"No rival in range";
+}
+ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching,mode:onMode,gap:onGap}[d.type]||(()=>{}))(d)};
 setTimeout(()=>{mdpr=fit(mapCv);tdpr=fit(trCv);drawMap();drawTrace()},80);
 </script>
 </body>

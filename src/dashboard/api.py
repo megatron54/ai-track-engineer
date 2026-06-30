@@ -83,6 +83,8 @@ def create_app(
         try:
             if state.session is not None:
                 await websocket.send_json(state.session)
+                for event in state.replay():
+                    await websocket.send_json(event)
             while True:
                 message = await queue.get()
                 await websocket.send_json(message)

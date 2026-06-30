@@ -177,3 +177,63 @@ async def test_run_session_publishes_mode_event() -> None:
     modes = [m for m in _drain(queue) if m["type"] == "mode"]
     assert modes
     assert modes[0]["mode"] in {"practice", "qualifying", "race"}
+
+
+async def test_run_session_publishes_gap_events() -> None:
+    import struct
+
+    from src.telemetry.opponents import OpponentReceiver
+
+    header = struct.Struct("<ii")
+    car = struct.Struct("<ifif")
+    packet = (
+        header.pack(0, 3)
+        + car.pack(0, 0.50, 1, 180.0)  # me
+        + car.pack(1, 0.55, 1, 190.0)  # ahead
+        + car.pack(2, 0.45, 1, 170.0)  # behind
+    )
+    recv = OpponentReceiver()
+    recv._make_protocol().datagram_received(packet, ("127.0.0.1", 1))  # noqa: SLF001
+
+    source = MockTelemetrySource()
+    static = source.connect().model_copy(update={"track_spline_length": 5000.0})
+    hub = TelemetryHub(queue_size=1000)
+    state = DashboardState()
+    queue = hub.subscribe()
+
+    await run_session(
+        source, hub, state, _TRACK, static, hz=2000, max_frames=5,
+        opponents=recv, gap_every=1,
+    )
+
+    gaps = [m for m in _drain(queue) if m["type"] == "gap"]
+    assert gaps
+    assert gaps[-1]["ahead_s"] is not None
+    assert gaps[-1]["behind_s"] is not None
+    assert gaps[-1]["trend_ahead"] in {"closing", "stable", "opening"}
+
+
+async def test_run_session_without_opponents_emits_no_gap() -> None:
+    source = MockTelemetrySource()
+    static = source.connect()
+    hub = TelemetryHub(queue_size=1000)
+    state = DashboardState()
+    queue = hub.subscribe()
+
+    await run_session(source, hub, state, _TRACK, static, hz=2000, max_frames=10)
+
+    assert not [m for m in _drain(queue) if m["type"] == "gap"]
+
+
+async def test_run_session_rejects_bad_gap_every() -> None:
+    import pytest
+
+    source = MockTelemetrySource()
+    static = source.connect()
+    try:
+        with pytest.raises(ValueError, match="gap_every"):
+            await run_session(
+                source, TelemetryHub(), DashboardState(), _TRACK, static, hz=60, gap_every=0
+            )
+    finally:
+        source.close()

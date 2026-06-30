@@ -28,6 +28,7 @@ from src.telemetry import (
     TelemetrySource,
 )
 from src.telemetry.models import ACStaticInfo
+from src.telemetry.opponents import OpponentReceiver
 from src.telemetry.shm_reader import SharedMemoryUnavailableError
 
 app = typer.Typer(
@@ -240,20 +241,38 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
         )
         with recorder:
             log.info("recording-telemetry", path=str(recorder.path))
-            await run_session(
-                source,
-                hub,
-                state,
-                track,
-                static,
-                hz=hz,
-                advisor=advisor,
-                engine_monitor=engine_monitor,
-                store=store,
-                session_id=session.id,
-                recorder=recorder,
-                best_ever_ms=best_ever_ms,
-            )
+            receiver = OpponentReceiver()
+            opponents: OpponentReceiver | None
+            try:
+                await receiver.start()
+                log.info(
+                    "opponent-bridge-listening",
+                    host=receiver.host,
+                    port=receiver.port,
+                )
+                opponents = receiver
+            except OSError as exc:
+                log.warning("opponent-bridge-unavailable", error=str(exc))
+                opponents = None
+            try:
+                await run_session(
+                    source,
+                    hub,
+                    state,
+                    track,
+                    static,
+                    hz=hz,
+                    advisor=advisor,
+                    engine_monitor=engine_monitor,
+                    store=store,
+                    session_id=session.id,
+                    recorder=recorder,
+                    best_ever_ms=best_ever_ms,
+                    opponents=opponents,
+                )
+            finally:
+                if opponents is not None:
+                    opponents.close()
             log.info("recording-complete", rows=recorder.rows_written)
 
 

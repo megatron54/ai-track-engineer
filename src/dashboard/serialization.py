@@ -1,10 +1,12 @@
 """Serialise domain objects into dashboard event envelopes.
 
-Three event types flow to the browser over the WebSocket:
+These builders turn domain objects into the envelopes that flow to the browser
+over the WebSocket:
 
 * ``session`` - sent once when a session loads (track, car, corners, map params).
 * ``telemetry`` - per-frame state (speed, rpm, inputs, position, live delta).
 * ``lap`` - emitted when a lap completes (time, sectors, personal best, advice).
+* ``gap`` - gaps (seconds) and trends to the cars ahead and behind.
 
 Keeping these builders pure makes the wire format easy to test and evolve.
 """
@@ -15,6 +17,7 @@ from typing import Any
 
 from src.analysis.pipeline import LapReport
 from src.knowledge.models import TrackInfo
+from src.strategy.gap_manager import GapReport
 from src.telemetry.models import TelemetryFrame
 
 
@@ -99,6 +102,20 @@ def lap_event(report: LapReport) -> dict[str, Any]:
             for loss in report.corner_losses
         ],
         "advice": [rec.message for rec in report.recommendations],
+    }
+
+
+def gap_event(report: GapReport) -> dict[str, Any]:
+    """Build the ``gap`` envelope describing gaps to the cars ahead and behind."""
+    return {
+        "type": "gap",
+        "ahead_s": report.gap_ahead_s,
+        "behind_s": report.gap_behind_s,
+        "trend_ahead": report.trend_ahead.value,
+        "trend_behind": report.trend_behind.value,
+        "contact_ahead_laps": report.contact_ahead_laps,
+        "contact_behind_laps": report.contact_behind_laps,
+        "message": report.message,
     }
 
 

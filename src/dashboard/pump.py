@@ -15,7 +15,7 @@ from src.ai.advisor import RaceEngineerAdvisor
 from src.analysis.engine_monitor import EngineMonitor
 from src.analysis.pipeline import AnalysisPipeline, LapReport
 from src.dashboard.hub import TelemetryHub
-from src.dashboard.serialization import lap_event, session_event, telemetry_event
+from src.dashboard.serialization import gap_event, lap_event, session_event, telemetry_event
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
 from src.processing.corner_coach import CornerCoach
@@ -23,11 +23,13 @@ from src.processing.message_queue import MessagePriority, MessageQueue, Priority
 from src.storage.session_recorder import SessionRecorder
 from src.storage.sqlite_client import SqliteStore
 from src.strategy.fuel_strategy import FuelStrategy
+from src.strategy.gap_manager import GapManager
 from src.strategy.mode_manager import ModeProfile, mode_from_session, profile_for
 from src.strategy.pit_strategy import pit_recommendation
 from src.strategy.session_detector import SessionModeTracker
 from src.strategy.tyre_strategy import TyreStrategy
 from src.telemetry.models import ACStaticInfo
+from src.telemetry.opponents import OpponentReceiver, gaps_seconds
 from src.telemetry.shm_structs import ACSessionType
 from src.telemetry.source import TelemetrySource
 
@@ -93,6 +95,8 @@ async def run_session(
     max_frames: int | None = None,
     telemetry_every: int = 1,
     best_ever_ms: int | None = None,
+    opponents: OpponentReceiver | None = None,
+    gap_every: int = 30,
 ) -> int:
     """Stream a connected session, broadcasting analysis events to the hub.
 
@@ -111,12 +115,19 @@ async def run_session(
         session_id: Session id under which laps are recorded (with ``store``).
         max_frames: Optional cap (mainly for tests).
         telemetry_every: Publish a telemetry event every Nth frame (throttling).
+        opponents: Optional opponent UDP receiver. When provided, gaps to the
+            cars ahead and behind are published as ``gap`` events.
+        gap_every: Sample gaps (and emit a ``gap`` event) every Nth frame. The
+            default (~0.5s at 60Hz) keeps the trend window meaningful instead of
+            reacting to single-frame jitter.
 
     Returns:
         The number of frames processed.
     """
     if telemetry_every < 1:
         raise ValueError("telemetry_every must be >= 1")
+    if gap_every < 1:
+        raise ValueError("gap_every must be >= 1")
 
     pipeline = AnalysisPipeline(track, engine_monitor=engine_monitor)
     state.set_session(session_event(track, car=static.car_model, best_ever_ms=best_ever_ms))
@@ -129,6 +140,7 @@ async def run_session(
     tyres = TyreStrategy()
     coach = CornerCoach(track)
     msg_queue = MessageQueue(cooldown_s=6.0)
+    gap_manager = GapManager()
 
     # Engineer mode: Practice/Qualify/Race personality + per-lap message budget.
     mode_tracker = SessionModeTracker()
@@ -146,7 +158,9 @@ async def run_session(
             # Engineer mode: publish on change, reset the per-lap budget on a
             # new lap, and adapt how many coaching messages get through.
             if mode_tracker.update(frame.graphics) is not None:
-                hub.publish(_mode_event(frame.graphics.session_type))
+                mode_evt = _mode_event(frame.graphics.session_type)
+                hub.publish(mode_evt)
+                state.remember(mode_evt)
             profile = profile_for(mode_from_session(frame.graphics.session_type))
             if frame.graphics.completed_laps != last_message_lap:
                 last_message_lap = frame.graphics.completed_laps
@@ -176,10 +190,20 @@ async def run_session(
 
             if frames % telemetry_every == 0:
                 hub.publish(telemetry_event(frame, delta=delta))
+            if opponents is not None and frames % gap_every == 0:
+                snapshot = opponents.latest()
+                if snapshot is not None:
+                    ahead_s, behind_s = gaps_seconds(snapshot, static.track_spline_length)
+                    gap_manager.update(gap_ahead_s=ahead_s, gap_behind_s=behind_s)
+                    gap_evt = gap_event(gap_manager.report())
+                    hub.publish(gap_evt)
+                    state.remember(gap_evt)
             if recorder is not None:
                 recorder.write(frame, delta=delta)
             if report is not None:
-                hub.publish(lap_event(report))
+                lap_evt = lap_event(report)
+                hub.publish(lap_evt)
+                state.remember(lap_evt)
 
                 # Per-lap strategy updates.
                 fuel.record_lap_fuel(frame.physics.fuel)
@@ -192,7 +216,7 @@ async def run_session(
                     fuel=fuel_report,
                     tyres=tyre_report,
                 )
-                hub.publish({
+                strategy_evt = {
                     "type": "strategy",
                     "lap": report.lap.lap_number,
                     "fuel": {
@@ -214,7 +238,9 @@ async def run_session(
                         "lap": pit.recommended_lap,
                         "message": pit.message,
                     },
-                })
+                }
+                hub.publish(strategy_evt)
+                state.remember(strategy_evt)
 
                 # Update corner coach reference on new PB.
                 if report.is_personal_best and pipeline._best_trace is not None:  # noqa: SLF001
