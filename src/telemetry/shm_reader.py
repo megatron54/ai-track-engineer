@@ -197,8 +197,6 @@ class SharedMemoryTelemetrySource(TelemetrySource):
     def read_frame(self) -> TelemetryFrame:
         if self._physics_map is None or self._graphics_map is None or self._static is None:
             raise SourceNotConnectedError("call connect() before read_frame()")
-        # The static page only changes on session load, so it is read once in
-        # connect() and reused here rather than re-parsed every frame.
         physics = self._read_struct(self._physics_map, SPageFilePhysics, PHYSICS_SIZE)
         graphics = self._read_struct(self._graphics_map, SPageFileGraphic, GRAPHICS_SIZE)
         return TelemetryFrame(
@@ -207,6 +205,19 @@ class SharedMemoryTelemetrySource(TelemetrySource):
             graphics=graphics_from_struct(graphics),
             static_info=self._static,
         )
+
+    def read_static(self) -> ACStaticInfo:
+        """Re-read the static page so a mid-stream car/track change is detected.
+
+        Assetto Corsa keeps the shared-memory regions alive for the whole game
+        launch and rewrites the static page on each session load, so re-parsing
+        the already-open mapping yields the current track and car.
+        """
+        if self._static_map is None:
+            raise SourceNotConnectedError("call connect() before read_static()")
+        raw_static = self._read_struct(self._static_map, SPageFileStatic, STATIC_SIZE)
+        self._static = static_from_struct(raw_static)
+        return self._static
 
     def close(self) -> None:
         for buffer in (self._physics_map, self._graphics_map, self._static_map):

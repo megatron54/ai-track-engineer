@@ -77,6 +77,10 @@ class MockTelemetrySource(TelemetrySource):
         self._packet_id = 0
         return self._static
 
+    def read_static(self) -> ACStaticInfo:
+        """Return the (fixed) static info; the mock never changes session."""
+        return self._static
+
     def read_frame(self) -> TelemetryFrame:
         if not self._connected:
             raise SourceNotConnectedError("call connect() before read_frame()")

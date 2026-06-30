@@ -28,6 +28,21 @@ class SourceNotConnectedError(TelemetrySourceError):
     """Raised when reading from a source that has not been connected."""
 
 
+class SessionChangedError(TelemetrySourceError):
+    """Raised mid-stream when the static page reports a new track/car/config.
+
+    Carries the freshly-read static info so the caller can tear down the old
+    session (recorder, DB session, track) and start a new one without a restart.
+    """
+
+    def __init__(self, new_static: ACStaticInfo) -> None:
+        super().__init__(
+            f"session changed to track={new_static.track!r} "
+            f"config={new_static.track_configuration!r} car={new_static.car_model!r}"
+        )
+        self.new_static = new_static
+
+
 class TelemetrySource(abc.ABC):
     """Abstract base class for telemetry producers.
 
@@ -47,6 +62,14 @@ class TelemetrySource(abc.ABC):
     @abc.abstractmethod
     def close(self) -> None:
         """Release any resources held by the source. Must be idempotent."""
+
+    def read_static(self) -> ACStaticInfo:
+        """Re-read the static page (track / car / config) without reconnecting.
+
+        Sources backed by a live session (shared memory) override this to detect
+        a mid-stream session change. The default declares it unsupported.
+        """
+        raise NotImplementedError("this source does not support read_static()")
 
     async def stream(
         self,

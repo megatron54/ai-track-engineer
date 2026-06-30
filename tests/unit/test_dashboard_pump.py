@@ -237,3 +237,31 @@ async def test_run_session_rejects_bad_gap_every() -> None:
             )
     finally:
         source.close()
+
+
+async def test_run_session_detects_mid_session_change() -> None:
+    import pytest
+    from src.telemetry.source import SessionChangedError
+
+    source = MockTelemetrySource()
+    static = source.connect()
+    changed = static.model_copy(update={"car_model": "dallara_f317", "track": "imola"})
+    reads = {"n": 0}
+
+    def fake_read_static() -> object:
+        reads["n"] += 1
+        return changed if reads["n"] >= 2 else static
+
+    source.read_static = fake_read_static  # type: ignore[method-assign]
+
+    hub = TelemetryHub(queue_size=1000)
+    state = DashboardState()
+    with pytest.raises(SessionChangedError) as exc:
+        await run_session(
+            source, hub, state, _TRACK, static, hz=4000, max_frames=200,
+            static_check_every=1,
+        )
+    assert exc.value.new_static.car_model == "dallara_f317"
+    # the source is left open so the caller can rebuild the session without a reconnect
+    assert source.read_frame() is not None
+    source.close()

@@ -30,6 +30,7 @@ from src.telemetry import (
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.opponents import OpponentReceiver
 from src.telemetry.shm_reader import SharedMemoryUnavailableError
+from src.telemetry.source import SessionChangedError
 
 app = typer.Typer(
     name="ai-track-engineer",
@@ -204,76 +205,99 @@ async def _capture_and_analyze(  # pragma: no cover - integration entry point
     *,
     hz: int,
 ) -> None:
-    """Connect, load track + map, and stream the session's events to the hub."""
+    """Connect, load track + map, and stream the session's events to the hub.
+
+    Re-detects a mid-session car/track change (driver swapped car or circuit in
+    AC) and rebuilds the session — track knowledge, map, DB session and recorder —
+    without a restart, so the dashboard always reflects the active car. The
+    opponent bridge and DB connection are shared across sessions.
+    """
     static = await _connect_when_ready(source)
-    track = _load_track_info(static)
-    track_dir = _track_dir_for(static)
-    if track_dir is not None:
-        state.set_map_png(map_png_path(track_dir, layout=static.track_configuration or ""))
-    engine_monitor = EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
     settings = get_settings()
     advisor = RaceEngineerAdvisor(OllamaClient.from_settings(settings.ollama))
     log = get_logger("analysis")
-
     db_path = Path(settings.app.database_path)
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    async with SqliteStore(str(db_path)) as store:
-        session = await store.create_session(
-            track=track.track_id,
-            car=static.car_model,
-            started_at=time.time(),
-            track_config=static.track_configuration or "",
-        )
-        log.info(
-            "session",
-            track=track.name,
-            car=static.car_model,
-            corners=track.corner_count,
-            ai_model=settings.ollama.model,
-            session_id=session.id,
-        )
-        best_ever_ms = await store.best_lap_ms_for(
-            track=track.track_id, car=static.car_model
-        )
-        sessions_dir = Path("data/sessions")
-        recorder = SessionRecorder(
-            sessions_dir, track.track_id, static.car_model, session.id
-        )
-        with recorder:
-            log.info("recording-telemetry", path=str(recorder.path))
-            receiver = OpponentReceiver()
-            opponents: OpponentReceiver | None
-            try:
-                await receiver.start()
+    sessions_dir = Path("data/sessions")
+    check_every = max(1, hz * 2)  # re-read the static page roughly every 2 seconds
+
+    receiver = OpponentReceiver()
+    opponents: OpponentReceiver | None
+    try:
+        await receiver.start()
+        log.info("opponent-bridge-listening", host=receiver.host, port=receiver.port)
+        opponents = receiver
+    except OSError as exc:
+        log.warning("opponent-bridge-unavailable", error=str(exc))
+        opponents = None
+
+    try:
+        async with SqliteStore(str(db_path)) as store:
+            while True:
+                track = _load_track_info(static)
+                track_dir = _track_dir_for(static)
+                state.set_map_png(
+                    map_png_path(track_dir, layout=static.track_configuration or "")
+                    if track_dir is not None
+                    else None
+                )
+                engine_monitor = (
+                    EngineMonitor(static.max_rpm) if static.max_rpm > 0 else None
+                )
+                session = await store.create_session(
+                    track=track.track_id,
+                    car=static.car_model,
+                    started_at=time.time(),
+                    track_config=static.track_configuration or "",
+                )
                 log.info(
-                    "opponent-bridge-listening",
-                    host=receiver.host,
-                    port=receiver.port,
-                )
-                opponents = receiver
-            except OSError as exc:
-                log.warning("opponent-bridge-unavailable", error=str(exc))
-                opponents = None
-            try:
-                await run_session(
-                    source,
-                    hub,
-                    state,
-                    track,
-                    static,
-                    hz=hz,
-                    advisor=advisor,
-                    engine_monitor=engine_monitor,
-                    store=store,
+                    "session",
+                    track=track.name,
+                    car=static.car_model,
+                    corners=track.corner_count,
+                    ai_model=settings.ollama.model,
                     session_id=session.id,
-                    recorder=recorder,
-                    best_ever_ms=best_ever_ms,
-                    opponents=opponents,
                 )
-            finally:
-                if opponents is not None:
-                    opponents.close()
-            log.info("recording-complete", rows=recorder.rows_written)
+                best_ever_ms = await store.best_lap_ms_for(
+                    track=track.track_id, car=static.car_model
+                )
+                recorder = SessionRecorder(
+                    sessions_dir, track.track_id, static.car_model, session.id
+                )
+                with recorder:
+                    log.info("recording-telemetry", path=str(recorder.path))
+                    try:
+                        await run_session(
+                            source,
+                            hub,
+                            state,
+                            track,
+                            static,
+                            hz=hz,
+                            advisor=advisor,
+                            engine_monitor=engine_monitor,
+                            store=store,
+                            session_id=session.id,
+                            recorder=recorder,
+                            best_ever_ms=best_ever_ms,
+                            opponents=opponents,
+                            static_check_every=check_every,
+                        )
+                    except SessionChangedError as changed:
+                        log.info(
+                            "session-changed",
+                            new_track=changed.new_static.track,
+                            new_car=changed.new_static.car_model,
+                            rows=recorder.rows_written,
+                        )
+                        static = changed.new_static
+                        continue
+                    log.info("recording-complete", rows=recorder.rows_written)
+                    break
+    finally:
+        if opponents is not None:
+            opponents.close()
+        source.close()
 
 
 if __name__ == "__main__":  # pragma: no cover

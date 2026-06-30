@@ -15,6 +15,13 @@ def test_format_lap_time(ms: int, expected: str) -> None:
     assert format_lap_time(ms) == expected
 
 
+def test_read_static_returns_current_static() -> None:
+    source = MockTelemetrySource(car_model="ks_test_car")
+    static = source.connect()
+    assert source.read_static() is static
+    assert source.read_static().car_model == "ks_test_car"
+
+
 def test_invalid_constructor_args() -> None:
     with pytest.raises(ValueError, match="dt must be positive"):
         MockTelemetrySource(dt=0.0)

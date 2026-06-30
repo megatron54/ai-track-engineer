@@ -32,6 +32,11 @@ class _CountingSource(TelemetrySource):
         self.closed = True
 
 
+def test_read_static_unsupported_by_default() -> None:
+    with pytest.raises(NotImplementedError):
+        _CountingSource().read_static()
+
+
 async def test_stream_yields_requested_number_of_frames() -> None:
     source = _CountingSource()
     frames = [frame async for frame in source.stream(1000, max_frames=5)]

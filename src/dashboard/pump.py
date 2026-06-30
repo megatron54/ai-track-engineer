@@ -31,7 +31,7 @@ from src.strategy.tyre_strategy import TyreStrategy
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.opponents import OpponentReceiver, gaps_seconds
 from src.telemetry.shm_structs import ACSessionType
-from src.telemetry.source import TelemetrySource
+from src.telemetry.source import SessionChangedError, TelemetrySource
 
 
 def _mode_event(session_type: ACSessionType) -> dict[str, Any]:
@@ -97,6 +97,7 @@ async def run_session(
     best_ever_ms: int | None = None,
     opponents: OpponentReceiver | None = None,
     gap_every: int = 30,
+    static_check_every: int = 0,
 ) -> int:
     """Stream a connected session, broadcasting analysis events to the hub.
 
@@ -120,6 +121,9 @@ async def run_session(
         gap_every: Sample gaps (and emit a ``gap`` event) every Nth frame. The
             default (~0.5s at 60Hz) keeps the trend window meaningful instead of
             reacting to single-frame jitter.
+        static_check_every: Re-read the static page every Nth frame to detect a
+            mid-stream car/track change; ``0`` disables it. On a change,
+            :class:`SessionChangedError` is raised (the source is left open).
 
     Returns:
         The number of frames processed.
@@ -148,12 +152,23 @@ async def run_session(
     last_message_lap = -1
 
     advice_tasks: set[asyncio.Task[None]] = set()
+    keep_source_open = False
     frames = 0
     try:
         async for frame in source.stream(hz, max_frames=max_frames, on_error="skip"):
             report = pipeline.process(frame)
             delta = pipeline.live_delta(frame)
             frames += 1
+
+            # Detect a mid-stream session change (driver swapped car/track in AC)
+            # and stop so the caller can rebuild the session. Leave the source open.
+            if static_check_every and frames % static_check_every == 0:
+                fresh = source.read_static()
+                if (fresh.track, fresh.track_configuration, fresh.car_model) != (
+                    static.track, static.track_configuration, static.car_model
+                ):
+                    keep_source_open = True
+                    raise SessionChangedError(fresh)
 
             # Engineer mode: publish on change, reset the per-lap budget on a
             # new lap, and adapt how many coaching messages get through.
@@ -261,6 +276,7 @@ async def run_session(
         for task in advice_tasks:
             if not task.done():
                 task.cancel()
-        source.close()
+        if not keep_source_open:
+            source.close()
     return frames
 
