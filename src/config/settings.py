@@ -40,6 +40,19 @@ class OllamaSettings(BaseModel):
     model: str = "mistral"
 
 
+class VoiceSettings(BaseModel):
+    """Tunables for the voice assistant (src/voice) - not yet wired into the CLI.
+
+    See docs/DEEP-DIVE-ROADMAP.md, Fase 2.5: the ASR/TTS engines and the
+    state machine are ready and tested; the remaining work (microphone
+    capture, a global hotkey listener) needs real audio hardware to validate.
+    """
+
+    asr_model_size: str = "base.en"
+    asr_device: str = "cpu"
+    tts_voice: str = "en-US-GuyNeural"
+
+
 class AppSettings(BaseModel):
     """General application tunables."""
 
@@ -68,6 +81,7 @@ class Settings(BaseSettings):
     app: AppSettings = Field(default_factory=AppSettings)
     influxdb: InfluxSettings = Field(default_factory=InfluxSettings)
     ollama: OllamaSettings = Field(default_factory=OllamaSettings)
+    voice: VoiceSettings = Field(default_factory=VoiceSettings)
 
     @classmethod
     def settings_customise_sources(
