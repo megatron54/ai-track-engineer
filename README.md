@@ -22,7 +22,7 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 |-------|------------|--------|
 | 1 | Live telemetry capture (60 Hz) + lap segmentation + storage + web dashboard | ✅ Done (responsive F1 dashboard; crash-safe shared memory) |
 | 2 | Per-corner analysis + lap comparison + tyre/engine monitors | ✅ Done |
-| 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done |
+| 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done (context now includes per-corner brake/throttle-point detail and a session-memory improving/regressing trend) |
 | 4 | Real-time in-corner feedback | ✅ Done (accurate live delta + corner coach, mode-aware, with brake/throttle-point and steering-correction detail vs. the reference lap) |
 | 5 | Pattern detection + session reports | ✅ Done (live on the dashboard: worst-corner trends + cumulative session report every lap) |
 | 6 | Bidirectional voice assistant | ⏳ Planned |

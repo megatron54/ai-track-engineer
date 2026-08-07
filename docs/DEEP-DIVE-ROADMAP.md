@@ -168,12 +168,14 @@ Esto es lo más valioso y lo que desbloquea IA y frontend después.
 3. ✅ **`CornerCoach` actualizado**: mantiene un buffer reciente de `(posición, tiempo, velocidad, freno, gas, volante)` y, al salir de una curva, reconstruye una traza parcial y la compara contra la referencia. El mensaje de coaching ahora es, por ejemplo, `"[T4] lost 0.18s vs best — braked 12m later, +1 steering correction"` en vez de solo `"[T4] lost 0.18s vs best"`. Degrada con elegancia (sin el detalle) cuando no hay suficientes datos de freno/gas para esa curva.
 4. ✅ **Tests con datos sintéticos**: `test_lap_trace.py` (crossing, wraparound, trail braking, reversals), `test_input_analyzer.py` (perfil de curva, comparación, conversión a metros), `test_corner_coach.py` (mensaje enriquecido y fallback sin señal de input) — todo sin conducir, con traces construidas a mano. Suite completa: 308 tests, 97% cobertura.
 
-### Fase 2 — Enriquecer el motor de IA (3-5 días, depende de Fase 1) — siguiente en la cola
+### Fase 2 — Enriquecer el motor de IA (3-5 días, depende de Fase 1) — ✅ COMPLETADA (parcial, ver nota de streaming)
 
-1. **Reescribir `context_builder.build_lap_context`** para incluir, por cada corner_loss, el desglose de Fase 1 (punto de frenada, delta de ápex, perfil de gas). El prompt ya pide esto — solo falta dárselo.
-2. **Memoria corta de sesión**: mantener las últimas N recomendaciones dadas (por curva) en `RaceEngineerAdvisor` para: (a) no repetir el mismo consejo vuelta tras vuelta si no ha habido cambio, (b) felicitar cuando el driver corrige algo señalado antes ("Mejoraste 0.15s en T4 tras el consejo anterior").
-3. **Streaming de respuesta**: usar `chat(..., stream=True)` de la librería `ollama` y emitir tokens incrementales por WebSocket (nuevo tipo de evento `coaching_stream` o reutilizar `coaching`). Mejora sensación de "vivo" en el feed.
-4. **Perfil de coche/pista opcional**: usar `knowledge/car_physics` (ya parseado, hoy solo alimenta el Setup Lab dormido) para inyectar límites reales (rpm óptimo, ángulo máximo de dirección) en el contexto del LLM, en vez de solo datos de telemetría cruda.
+1. ✅ **`context_builder.build_lap_context` reescrito**: cada `corner_loss` ahora incluye el desglose de Fase 1 vía `format_input_detail` (punto de frenada/gas en metros, correcciones de volante) cuando hay datos suficientes. El pipeline (`AnalysisPipeline._collect_input_deltas`) calcula estos deltas para las mismas curvas que `corner_losses`.
+2. ✅ **Memoria corta de sesión**: `RaceEngineerAdvisor` guarda el último `delta_s` visto por curva (`_last_corner_delta_s`) y calcula una tendencia ("improving"/"regressing" con el valor anterior) que se inyecta tanto en el mensaje heurístico como en el contexto del LLM. Diseño deliberadamente simple y determinista (no historial de conversación con el LLM) para mantenerlo testeable y predecible; revisado por el agente `python-reviewer` (limitación documentada: las entradas no caducan, ver comentario en `_remember`).
+3. ⏸️ **Streaming de respuesta — diferido conscientemente**: se decidió no implementarlo en esta pasada. Motivo: añade superficie nueva al contrato WebSocket + frontend que no se puede verificar end-to-end sin un servidor Ollama real disponible en este entorno de trabajo, y el valor principal pedido por el usuario (que el feedback sea específico, no genérico) ya se resuelve con los puntos 1-2. Queda como candidato de una fase futura si el streaming demuestra ser necesario para la sensación de "vivo" del feed.
+4. ⏸️ **Perfil de coche/pista (`knowledge/car_physics`) — diferido**: depende de si el Setup Lab (Fase 4, `car_physics` solo lo usa hoy para ahí) sigue adelante; no se justifica cablearlo solo para el contexto del LLM sin esa decisión tomada primero.
+
+Revisión: `python-reviewer` auditó el diff antes de mergear (`git diff develop` en la rama `feature/phase2-ai-context-enrichment`) — sin bugs de correctitud; se añadieron los dos tests que señaló como huecos (tendencia "regressing", `format_input_detail` directo) antes de mergear.
 
 ### Fase 2.5 — Módulo de voz (subida de prioridad tras investigación de WhimprFlow; ver §2.6)
 
@@ -227,8 +229,8 @@ Para cada uno, tomar una decisión explícita en vez de dejarlo indefinido:
 
 1. ✅ Fase 0 (quick wins) — completada.
 2. ✅ Fase 1 (análisis de inputs) — completada.
-3. Fase 2 (IA) — depende directamente de Fase 1, es relativamente rápida una vez el dato existe. **Siguiente paso de trabajo.**
-4. Fase 2.5 (voz) — depende de que el advisor responda bien a texto (Fase 2); no bloquea ni bloquea al frontend, puede solaparse con la Fase 3.
+3. ✅ Fase 2 (IA) — completada (streaming y perfil de coche diferidos, ver §3).
+4. Fase 2.5 (voz) — depende de que el advisor responda bien a texto (Fase 2, ya hecho); no bloquea ni bloquea al frontend, puede solaparse con la Fase 3. **Siguiente paso de trabajo.**
 5. Fase 3 (frontend) — puede arrancar en paralelo a Fase 1/2/2.5 en cuanto el contrato WebSocket esté congelado (punto 1 de Fase 3), usando datos mock mientras las demás avanzan.
 6. Fase 4 (módulos dormidos) — decisión de producto, no bloquea nada, puede ir intercalada.
 7. Fase 5 (mercado) — continuo, pero el vídeo demo cobra sentido real después de Fase 1, y ahora también tras la Fase 2.5 (una demo con voz es un argumento de venta más fuerte que solo texto).
