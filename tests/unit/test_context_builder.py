@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from src.ai.context_builder import build_lap_context
 from src.analysis.engine_monitor import AlertSeverity, EngineAlert
+from src.analysis.input_analyzer import CornerInputDelta
 from src.analysis.models import CornerDelta
 from src.analysis.tyre_model import ThermalStatus, TyreThermalReport
 from src.knowledge.models import Corner, TrackInfo
@@ -12,6 +13,12 @@ from src.processing.models import Lap
 _TRACK = TrackInfo(
     track_id="ks_laguna_seca",
     name="Laguna Seca",
+    corners=(Corner(index=7, name="The Corkscrew", entry=0.665, exit=0.717),),
+)
+_TRACK_WITH_LENGTH = TrackInfo(
+    track_id="ks_laguna_seca",
+    name="Laguna Seca",
+    length_m=3602.0,
     corners=(Corner(index=7, name="The Corkscrew", entry=0.665, exit=0.717),),
 )
 
@@ -52,3 +59,35 @@ def test_context_includes_corner_losses_and_tyres() -> None:
 def test_context_marks_invalid_lap() -> None:
     lap = Lap(lap_number=2, lap_time_ms=95_000, valid=False)
     assert "INVALID" in build_lap_context(lap=lap, track=_TRACK)
+
+
+def test_context_includes_input_point_detail_when_track_length_known() -> None:
+    lap = Lap(lap_number=5, lap_time_ms=90_000)
+    losses = [CornerDelta(corner_index=7, corner_name="The Corkscrew", delta_s=0.42)]
+    input_deltas = [
+        CornerInputDelta(
+            corner_index=7,
+            corner_name="The Corkscrew",
+            brake_point_delta=0.01,  # 1% of 3602m ~= 36m later
+            throttle_point_delta=None,
+            trail_braking_overlap_delta=0.0,
+            steering_reversals_delta=1,
+        )
+    ]
+    context = build_lap_context(
+        lap=lap, track=_TRACK_WITH_LENGTH, corner_losses=losses, input_deltas=input_deltas
+    )
+    assert "braked 36m later" in context
+    assert "+1 steering correction" in context
+
+
+def test_context_includes_corner_trend() -> None:
+    lap = Lap(lap_number=6, lap_time_ms=89_000)
+    losses = [CornerDelta(corner_index=7, corner_name="The Corkscrew", delta_s=0.10)]
+    context = build_lap_context(
+        lap=lap,
+        track=_TRACK,
+        corner_losses=losses,
+        corner_trends={"The Corkscrew": "improving, was +0.30s"},
+    )
+    assert "[improving, was +0.30s]" in context
