@@ -6,6 +6,7 @@ import pytest
 from src.ai.advisor import RaceEngineerAdvisor
 from src.ai.models import Priority
 from src.analysis.engine_monitor import AlertSeverity, EngineAlert
+from src.analysis.input_analyzer import CornerInputDelta
 from src.analysis.models import CornerDelta
 from src.analysis.tyre_model import ThermalStatus, TyreThermalReport
 from src.knowledge.models import Corner, TrackInfo
@@ -112,3 +113,90 @@ async def test_advise_falls_back_when_llm_returns_blank() -> None:
     recs = await advisor.advise(lap=_LAP, track=_TRACK, corner_losses=losses)
     # Blank LLM reply -> heuristic fallback still produces advice.
     assert any("T1" in r.message for r in recs)
+
+
+def test_heuristic_advice_includes_input_point_detail() -> None:
+    advisor = RaceEngineerAdvisor()
+    losses = [CornerDelta(corner_index=1, corner_name="T1", delta_s=0.3)]
+    input_deltas = [
+        CornerInputDelta(
+            corner_index=1,
+            corner_name="T1",
+            brake_point_delta=0.02,  # 2% of a 1000m track = 20m later
+            throttle_point_delta=None,
+            trail_braking_overlap_delta=0.0,
+            steering_reversals_delta=0,
+        )
+    ]
+    recs = advisor.heuristic_advice(
+        corner_losses=losses, input_deltas=input_deltas, track_length_m=1000.0
+    )
+    assert any("braked 20m later" in r.message for r in recs)
+
+
+def test_heuristic_advice_notes_improving_trend() -> None:
+    advisor = RaceEngineerAdvisor()
+    message = advisor.heuristic_advice(
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.10)],
+        corner_trends={"T1": "improving, was +0.30s"},
+    )[0].message
+    assert "improving" in message
+    assert "0.30s" in message
+
+
+async def test_advise_remembers_corner_trend_across_laps_heuristic() -> None:
+    advisor = RaceEngineerAdvisor()
+    first = await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.40)],
+    )
+    assert not any("improving" in r.message or "regressing" in r.message for r in first)
+
+    second = await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.10)],
+    )
+    assert any("improving" in r.message for r in second)
+
+
+async def test_advise_remembers_regressing_corner_trend() -> None:
+    advisor = RaceEngineerAdvisor()
+    await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.10)],
+    )
+    second = await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.40)],
+    )
+    assert any("regressing" in r.message for r in second)
+    assert any("0.10s" in r.message for r in second)
+
+
+async def test_advise_passes_corner_trend_into_llm_context() -> None:
+    llm = _FakeLLM(reply="[T1] noted")
+    advisor = RaceEngineerAdvisor(llm)
+
+    captured: dict[str, str] = {}
+
+    async def _capturing_complete(system: str, user: str) -> str:
+        captured["user"] = user
+        return "[T1] noted"
+
+    llm.complete = _capturing_complete  # type: ignore[method-assign]
+
+    await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.40)],
+    )
+    await advisor.advise(
+        lap=_LAP,
+        track=_TRACK,
+        corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.10)],
+    )
+    assert "improving" in captured["user"]
