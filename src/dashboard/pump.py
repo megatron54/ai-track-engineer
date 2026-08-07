@@ -178,6 +178,9 @@ async def run_session(
                     frame.physics.speed_kmh,
                     frame.graphics.current_time_ms / 1000.0,
                     frame.timestamp,
+                    brake=frame.physics.brake,
+                    gas=frame.physics.gas,
+                    steer_angle=frame.physics.steer_angle,
                 )
                 for msg in coach_msgs:
                     msg_queue.push(msg)
