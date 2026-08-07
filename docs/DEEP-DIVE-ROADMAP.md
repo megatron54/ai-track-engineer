@@ -197,15 +197,15 @@ Reordenada por delante del frontend porque: (a) depende de la Fase 2 (necesita a
 - Cableado al CLI (`--voice` en `main.py`, hoy solo registra un warning "not implemented").
 - Prueba manual end-to-end con un servidor Ollama real y modelos Whisper/edge-tts descargados.
 
-### Fase 3 — Frontend (2-4 semanas, paralelizable con Fase 1/2/2.5 porque solo consume el mismo contrato WebSocket)
+### Fase 3 — Frontend (2-4 semanas, paralelizable con Fase 1/2/2.5 porque solo consume el mismo contrato WebSocket) — 🚧 EN PROGRESO (primer slice completado)
 
-1. **Congelar el contrato WebSocket actual** (tipos `session`, `telemetry`, `lap`, `advice`, `strategy`, `coaching`, `mode`, `pattern`, `session_report`) como el punto de integración estable. Documentarlo en `docs/` con un ejemplo de payload por tipo — esto permite reescribir el frontend sin tocar Python en paralelo.
-2. Migrar a **React + Vite + TypeScript** (como ya lo indica el propio README como plan), panel por panel, empezando por los de menor riesgo/mayor beneficio:
-   - Lap History table → componente con sorting/filtrado.
-   - Corner Analysis + Feed → listas virtualizadas, con distinción visual por prioridad (ya existe `Priority` en el backend, pero el HTML no lo usa aún para colorear tarjetas).
-   - Telemetry Trace → sustituir el canvas manual por una librería ligera (uPlot o Visx) que permita overlay de vuelta actual vs referencia y zoom.
-3. Añadir **tests de componente** (Vitest + Testing Library) y, si procede, un test E2E ligero con Playwright que arranque el server en `--mock` y verifique que el dashboard pinta datos.
-4. Mantener un modo "single-file" de emergencia (o generar el build estático servido desde `dashboard/static/`) para no romper el flujo `uv run python -m src.main run`.
+1. ✅ **Contrato WebSocket congelado**: `docs/WEBSOCKET-CONTRACT.md`, con ejemplo de payload por cada uno de los 9 tipos de evento (`session`, `telemetry`, `lap`, `advice`, `coaching`, `strategy`, `mode`, `pattern`, `session_report`), política de versionado (aditivo libre; cambios que rompen requieren un futuro campo `schema`), y el hueco conocido de testing de contrato documentado explícitamente (no resuelto todavía, ver punto 3 más abajo).
+2. 🚧 **Migración a React + Vite + TypeScript**: proyecto arrancado en `frontend/` (Vite + React 19 + TS + Vitest + Testing Library). **Primer slice migrado** (el de menor riesgo, tal como proponía este mismo documento): Lap History table, Session Report y Pattern panel — los tres de solo lectura, sin canvas/WebGL. Pendiente para slices siguientes:
+   - Telemetry Trace (canvas de velocidad/freno/gas/volante) → sustituir por una librería ligera (uPlot o Visx) con overlay de vuelta actual vs referencia.
+   - Track map, panel de neumáticos/combustible, feed de coaching/estrategia con distinción visual por prioridad.
+   - El dashboard HTML heredado (`src/dashboard/static/index.html`) sigue siendo el dashboard principal y completo hasta que el resto de paneles esté migrado — este PR no lo sustituye todavía, ambos coexisten.
+3. ✅ **Tests de componente** (Vitest + Testing Library): 28 tests para los 3 componentes migrados + el hook `useDashboardEvents` (reductor puro testeado directamente, más un test con un `WebSocket` simulado) + helpers de formato. CI de GitHub Actions ampliado con un job `frontend` (oxlint + tsc/build + vitest) — primera vez que el frontend tiene verificación automática, cerrando parcialmente el hueco de "0 tests de frontend" señalado en §2.5. Sigue pendiente un test E2E (Playwright) que arranque `--mock` y verifique el pintado real contra un servidor vivo — candidato para cuando la migración esté más completa.
+4. **Modo "single-file" de emergencia**: no aplica todavía — al coexistir ambos frontends (HTML heredado + React en `frontend/`), no hay riesgo de romper `uv run python -m src.main run`, que sigue sirviendo el HTML heredado sin cambios. Cuando la migración esté completa, decidir si `dashboard/static/` pasa a servir el build de `frontend/` o si se mantiene un fallback.
 
 ### Fase 4 — Decidir el destino de los módulos dormidos (1 semana de diseño + implementación variable)
 
@@ -239,7 +239,7 @@ Para cada uno, tomar una decisión explícita en vez de dejarlo indefinido:
 2. ✅ Fase 1 (análisis de inputs) — completada.
 3. ✅ Fase 2 (IA) — completada (streaming y perfil de coche diferidos, ver §3).
 4. ✅ Fase 2.5 (voz) — escalado (state machine, ASR/TTS, integración con el advisor) completado; queda cableado de hardware real (micrófono, hotkey, CLI) como seguimiento manual.
-5. Fase 3 (frontend) — puede arrancar en paralelo, usando datos mock. **Siguiente paso de trabajo.**
+5. 🚧 Fase 3 (frontend) — contrato congelado + primer slice migrado (Lap History, Session Report, Pattern). **Siguiente paso de trabajo**: migrar Telemetry Trace, mapa de pista y paneles de neumáticos/combustible/coaching.
 6. Fase 4 (módulos dormidos) — decisión de producto, no bloquea nada, puede ir intercalada.
 7. Fase 5 (mercado) — continuo, pero el vídeo demo cobra sentido real después de Fase 1, y ahora también tras la Fase 2.5 (una demo con voz es un argumento de venta más fuerte que solo texto).
 

@@ -36,7 +36,7 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 - **Telemetry:** Shared Memory (`mmap` / `ctypes`) at 60 Hz
 - **AI:** Local LLM via [Ollama](https://ollama.com) (offline, private)
 - **Backend:** FastAPI + WebSocket
-- **Frontend:** Embedded HTML + Canvas dashboard (React + Vite planned)
+- **Frontend:** Embedded HTML + Canvas dashboard (primary, feature-complete) + a React/Vite/TypeScript rewrite in `frontend/` (in progress - Lap History, Session Report and Pattern panels migrated so far; see `docs/DEEP-DIVE-ROADMAP.md`)
 - **Storage:** SQLite (metadata) + CSV session recordings (InfluxDB adapter optional)
 - **Voice:** faster-whisper (STT), Piper/Edge (TTS), Silero VAD
 - **ML:** scikit-learn + XGBoost
