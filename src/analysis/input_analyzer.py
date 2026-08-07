@@ -127,3 +127,37 @@ def compare_corner_inputs(
         trail_braking_overlap_delta=cur.trail_braking_overlap - ref.trail_braking_overlap,
         steering_reversals_delta=cur.steering_reversals - ref.steering_reversals,
     )
+
+
+# Below this distance (metres) an input-point delta is noise, not signal - not
+# worth surfacing to the driver or the LLM.
+_MIN_REPORTABLE_METRES = 1.0
+
+
+def format_input_detail(
+    delta: CornerInputDelta,
+    track_length_m: float,
+    *,
+    min_reportable_m: float = _MIN_REPORTABLE_METRES,
+) -> str | None:
+    """Render a :class:`CornerInputDelta` as a short, human-readable phrase.
+
+    E.g. ``"braked 12m later, +1 steering correction"``. Returns ``None`` when
+    no metric clears ``min_reportable_m`` (or, for steering, a positive
+    delta) - i.e. there is nothing worth saying. Shared by the real-time
+    corner coach and the LLM context builder so both surfaces phrase the same
+    underlying numbers identically.
+    """
+    parts: list[str] = []
+    brake_m = delta.brake_point_delta_m(track_length_m)
+    if brake_m is not None and abs(brake_m) >= min_reportable_m:
+        parts.append(f"braked {abs(brake_m):.0f}m {'later' if brake_m > 0 else 'earlier'}")
+    throttle_m = delta.throttle_point_delta_m(track_length_m)
+    if throttle_m is not None and abs(throttle_m) >= min_reportable_m:
+        parts.append(
+            f"throttle {abs(throttle_m):.0f}m {'later' if throttle_m > 0 else 'earlier'}"
+        )
+    if delta.steering_reversals_delta > 0:
+        plural = "s" if delta.steering_reversals_delta > 1 else ""
+        parts.append(f"+{delta.steering_reversals_delta} steering correction{plural}")
+    return ", ".join(parts) if parts else None

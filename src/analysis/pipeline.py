@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from src.ai.advisor import RaceEngineerAdvisor
 from src.ai.models import Recommendation
 from src.analysis.engine_monitor import EngineAlert, EngineMonitor
+from src.analysis.input_analyzer import CornerInputDelta, compare_corner_inputs
 from src.analysis.lap_comparator import LapComparison
 from src.analysis.models import CornerDelta
 from src.analysis.tyre_model import TyreThermalModel, TyreThermalReport, window_for_compound
@@ -37,6 +38,7 @@ class LapReport(BaseModel):
     lap: Lap
     is_personal_best: bool
     corner_losses: tuple[CornerDelta, ...] = ()
+    input_deltas: tuple[CornerInputDelta, ...] = ()
     tyre_report: TyreThermalReport | None = None
     engine_alerts: tuple[EngineAlert, ...] = ()
     recommendations: tuple[Recommendation, ...] = ()
@@ -129,9 +131,11 @@ class AnalysisPipeline:
         is_pb = self._is_personal_best(lap)
 
         corner_losses: tuple[CornerDelta, ...] = ()
+        input_deltas: tuple[CornerInputDelta, ...] = ()
         if trace is not None and self._best_trace is not None:
             comparison = LapComparison(self._best_trace, trace)
             corner_losses = tuple(comparison.biggest_losses(self._track, limit=3))
+            input_deltas = self._collect_input_deltas(trace, corner_losses)
 
         tyre_report: TyreThermalReport | None = None
         engine_alerts: tuple[EngineAlert, ...] = ()
@@ -158,10 +162,27 @@ class AnalysisPipeline:
             lap=lap,
             is_personal_best=is_pb,
             corner_losses=corner_losses,
+            input_deltas=input_deltas,
             tyre_report=tyre_report,
             engine_alerts=engine_alerts,
             recommendations=recommendations,
         )
+
+    def _collect_input_deltas(
+        self, trace: LapTrace, corner_losses: tuple[CornerDelta, ...]
+    ) -> tuple[CornerInputDelta, ...]:
+        """Diff driver inputs (brake/throttle point, steering) for the corners
+        where time was lost, against the reference lap - the *why* behind
+        each ``CornerDelta``'s *how much*."""
+        assert self._best_trace is not None
+        by_index = {corner.index: corner for corner in self._track.corners}
+        deltas: list[CornerInputDelta] = []
+        for loss in corner_losses:
+            corner = by_index.get(loss.corner_index)
+            if corner is None:
+                continue
+            deltas.append(compare_corner_inputs(trace, self._best_trace, corner))
+        return tuple(deltas)
 
     def _build_trace(self, lap: Lap, frames: list[TelemetryFrame]) -> LapTrace | None:
         if len(frames) < _MIN_TRACE_FRAMES:

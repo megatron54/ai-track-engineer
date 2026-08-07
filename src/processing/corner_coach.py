@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from src.analysis.input_analyzer import compare_corner_inputs
+from src.analysis.input_analyzer import compare_corner_inputs, format_input_detail
 from src.knowledge.models import Corner, TrackInfo
 from src.processing.lap_trace import LapTrace
 from src.processing.message_queue import MessagePriority, PriorityMessage
@@ -24,10 +24,6 @@ from src.processing.message_queue import MessagePriority, PriorityMessage
 # Generous enough to cover a typical braking-zone lookback window at 60 Hz
 # without holding a full lap's worth of telemetry in memory.
 _RECENT_MAX_SAMPLES = 4000
-
-# Below this distance (metres) an input-point delta is noise, not signal -
-# not worth adding to the coaching message.
-_MIN_REPORTABLE_METRES = 1.0
 
 
 class CornerCoach:
@@ -121,21 +117,7 @@ class CornerCoach:
         except ValueError:
             return None
         delta = compare_corner_inputs(current_trace, self._reference, corner)
-
-        parts: list[str] = []
-        brake_m = delta.brake_point_delta_m(self._track.length_m)
-        if brake_m is not None and abs(brake_m) >= _MIN_REPORTABLE_METRES:
-            parts.append(f"braked {abs(brake_m):.0f}m {'later' if brake_m > 0 else 'earlier'}")
-        throttle_m = delta.throttle_point_delta_m(self._track.length_m)
-        if throttle_m is not None and abs(throttle_m) >= _MIN_REPORTABLE_METRES:
-            parts.append(
-                f"throttle {abs(throttle_m):.0f}m {'later' if throttle_m > 0 else 'earlier'}"
-            )
-        if delta.steering_reversals_delta > 0:
-            plural = "s" if delta.steering_reversals_delta > 1 else ""
-            parts.append(f"+{delta.steering_reversals_delta} steering correction{plural}")
-
-        return ", ".join(parts) if parts else None
+        return format_input_detail(delta, self._track.length_m)
 
     def _brake_check(
         self, position: float, speed_kmh: float, timestamp: float
