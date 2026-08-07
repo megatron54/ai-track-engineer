@@ -177,17 +177,25 @@ Esto es lo más valioso y lo que desbloquea IA y frontend después.
 
 Revisión: `python-reviewer` auditó el diff antes de mergear (`git diff develop` en la rama `feature/phase2-ai-context-enrichment`) — sin bugs de correctitud; se añadieron los dos tests que señaló como huecos (tendencia "regressing", `format_input_detail` directo) antes de mergear.
 
-### Fase 2.5 — Módulo de voz (subida de prioridad tras investigación de WhimprFlow; ver §2.6)
+### Fase 2.5 — Módulo de voz (subida de prioridad tras investigación de WhimprFlow; ver §2.6) — ✅ ESCALADO COMPLETADO (falta hardware real)
 
 Reordenada por delante del frontend porque: (a) depende de la Fase 2 (necesita al advisor respondiendo bien a texto antes de hablarlo), (b) es paralelizable a la Fase 3 (no toca el HTML), y (c) el propio usuario la señala como de alto valor diferencial — manos ocupadas en volante/pedales es el caso de uso donde una pantalla no sirve pero una voz sí.
 
-1. **`src/voice/state_machine.py`**: puerto en Python del reductor puro de WhimprFlow (`step(input) -> list[Action]`), adaptado a push-to-talk simple (sin doble-tap/modo manos-libres por ahora, eso puede añadirse después si hace falta). Estados: `Idle`, `Recording`, `Finalizing`. Enteramente testeable sin hardware, sin asyncio, sin mocks de audio.
-2. **`src/voice/asr.py`**: `Protocol AsrEngine` (`transcribe(pcm16k: bytes) -> str`), análogo a `src/ai/llm.py::LLMClient`. Implementación `FasterWhisperEngine` con import perezoso de `faster_whisper` (mismo patrón que `OllamaClient`), `condition_on_previous_text=False`, `vad_filter=True` (evita el problema de repetición de texto que documenta WhimprFlow en clips cortos).
-3. **Integración con el advisor existente**: la pregunta transcrita se pasa a `RaceEngineerAdvisor`/`context_builder` como contexto adicional — no se crea un segundo pipeline de IA, se reutiliza el mismo Ollama ya integrado.
-4. **`src/voice/tts.py`**: adaptador de salida (`edge-tts` por defecto, `piper-tts` como alternativa offline) que lee la respuesta de texto ya generada — capa puramente de salida, no requiere cambios en el LLM.
-5. **Sin diarización en v1**: "reconocer tu voz" se resuelve con push-to-talk (solo se graba con el botón pulsado, sin ambigüedad de hablante). Verificación de hablante (speaker embedding) queda como posible Fase futura si se necesita ignorar ruido de fondo/radio.
-6. **Tests**: máquina de estados con inputs sintéticos (como los tests de Rust de WhimprFlow, adaptados); `AsrEngine` testeado con un fake (mismo patrón que `_FakeLLM` en `test_advisor.py`) alimentado con fixtures de audio cortas pregrabadas, sin captura de micrófono en vivo.
-7. **Dependencia ya declarada**: `pyproject.toml` ya tiene el extra `voice` (`faster-whisper`, `piper-tts`, `edge-tts`, `silero-vad`, `sounddevice`) sin usar — esta fase por fin le da uso.
+1. ✅ **`src/voice/state_machine.py`**: puerto en Python del reductor puro de WhimprFlow (`step(event) -> list[Action]`), push-to-talk simple (Idle/Recording/Finalizing), con guardia de exhaustividad (`assert_never`) y cooldown medido desde la finalización real del pipeline (no desde que se soltó el botón) tras una corrección señalada por el agente `security-reviewer`. 100% cobertura, sin hardware ni asyncio en la máquina misma.
+2. ✅ **`src/voice/asr.py` + `faster_whisper_engine.py`**: `Protocol AsrEngine`, adaptador `FasterWhisperEngine` con import perezoso, `condition_on_previous_text=False` + `vad_filter=True`. La normalización PCM16→float32 y el join de segmentos se extrajeron a funciones libres testeadas directamente (el propio adaptador de red/modelo permanece `# pragma: no cover`, igual que `OllamaClient`).
+3. ✅ **Integración con el advisor existente**: `RaceEngineerAdvisor.answer_question()` + `context_builder.build_question_context()` (comparte la sección de análisis con `build_lap_context` vía `_analysis_lines`), con `VOICE_SYSTEM_PROMPT` propio (una respuesta hablada corta, sin markdown). No crea un segundo pipeline de IA. El texto transcrito se sanea (colapso de saltos de línea/espacios) antes de insertarse en el contexto, y el prompt indica explícitamente al modelo que ese texto es la pregunta del piloto, no instrucciones — mitigación de inyección de prompt señalada por el agente `security-reviewer` (riesgo real bajo: modelo local, un solo usuario, sin herramientas ni secretos alcanzables).
+4. ✅ **`src/voice/tts.py` + `edge_tts_engine.py`**: adaptador de salida (`edge-tts` por defecto; `piper-tts` queda como alternativa 100% offline para una fase posterior si se prioriza privacidad de red sobre calidad/gratuidad).
+5. **Sin diarización en v1**: sin cambios respecto al diseño original — se resuelve con push-to-talk.
+6. ✅ **Tests**: máquina de estados con eventos sintéticos (24 tests), `answer_question`/`build_question_context` con un fake LLM (mismo patrón que `_FakeLLM`), funciones puras del adaptador ASR testeadas directamente. Suite completa: 352 tests, 97% cobertura, 100% en todos los módulos nuevos de `src/voice`.
+7. ✅ **`config/settings.py`**: nuevo bloque `VoiceSettings` (tamaño de modelo ASR, dispositivo, voz TTS) listo para cablear al CLI.
+
+**Revisión de seguridad**: el agente `security-reviewer` auditó el diff completo antes de mergear. Hallazgos aplicados: guardia de exhaustividad en el `match` del reductor, corrección de la semántica del cooldown (medía desde parar de grabar, no desde que el pipeline terminaba — con un ASR/LLM/TTS lento el cooldown quedaba sin efecto), saneado del texto transcrito antes de insertarlo en el prompt, y extracción de la lógica pura del adaptador ASR fuera del `# pragma: no cover` para que sea testeada de verdad. Sin hallazgos críticos ni altos.
+
+**Pendiente, deliberadamente fuera de esta pasada** (requiere hardware de audio real, no verificable en este entorno de trabajo en sandbox):
+- Captura de micrófono real (librería como `sounddevice`, ya declarada como dependencia opcional).
+- Listener de hotkey global (para el botón físico de push-to-talk, incluso mapeado a un botón del volante si el hardware del piloto lo permite).
+- Cableado al CLI (`--voice` en `main.py`, hoy solo registra un warning "not implemented").
+- Prueba manual end-to-end con un servidor Ollama real y modelos Whisper/edge-tts descargados.
 
 ### Fase 3 — Frontend (2-4 semanas, paralelizable con Fase 1/2/2.5 porque solo consume el mismo contrato WebSocket)
 
@@ -230,8 +238,8 @@ Para cada uno, tomar una decisión explícita en vez de dejarlo indefinido:
 1. ✅ Fase 0 (quick wins) — completada.
 2. ✅ Fase 1 (análisis de inputs) — completada.
 3. ✅ Fase 2 (IA) — completada (streaming y perfil de coche diferidos, ver §3).
-4. Fase 2.5 (voz) — depende de que el advisor responda bien a texto (Fase 2, ya hecho); no bloquea ni bloquea al frontend, puede solaparse con la Fase 3. **Siguiente paso de trabajo.**
-5. Fase 3 (frontend) — puede arrancar en paralelo a Fase 1/2/2.5 en cuanto el contrato WebSocket esté congelado (punto 1 de Fase 3), usando datos mock mientras las demás avanzan.
+4. ✅ Fase 2.5 (voz) — escalado (state machine, ASR/TTS, integración con el advisor) completado; queda cableado de hardware real (micrófono, hotkey, CLI) como seguimiento manual.
+5. Fase 3 (frontend) — puede arrancar en paralelo, usando datos mock. **Siguiente paso de trabajo.**
 6. Fase 4 (módulos dormidos) — decisión de producto, no bloquea nada, puede ir intercalada.
 7. Fase 5 (mercado) — continuo, pero el vídeo demo cobra sentido real después de Fase 1, y ahora también tras la Fase 2.5 (una demo con voz es un argumento de venta más fuerte que solo texto).
 

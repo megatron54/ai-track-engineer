@@ -25,7 +25,7 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 | 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done (context now includes per-corner brake/throttle-point detail and a session-memory improving/regressing trend) |
 | 4 | Real-time in-corner feedback | ✅ Done (accurate live delta + corner coach, mode-aware, with brake/throttle-point and steering-correction detail vs. the reference lap) |
 | 5 | Pattern detection + session reports | ✅ Done (live on the dashboard: worst-corner trends + cumulative session report every lap) |
-| 6 | Bidirectional voice assistant | ⏳ Planned |
+| 6 | Bidirectional voice assistant | 🚧 Push-to-talk scaffold done (state machine, ASR/TTS protocols, question-answering via the existing Ollama integration); mic capture + hotkey + CLI wiring pending real audio hardware |
 | 7 | Predictive ML models | ✅ Corner-time predictor (trained on real laps) |
 | 8 | Race strategist (fuel, pit, tyres) | 🚧 Fuel + tyre + pit live (opponent gaps / overcut-undercut pending) |
 | 9 | Physics-based Setup Lab (digital twin) | 🚧 Setup I/O + consistency (physics twin dormant; packed `.acd` pending) |
