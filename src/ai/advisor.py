@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import structlog
 
-from src.ai.context_builder import build_lap_context
+from src.ai.context_builder import build_lap_context, build_question_context
 from src.ai.llm import LLMClient
-from src.ai.models import SYSTEM_PROMPT, Priority, Recommendation
+from src.ai.models import SYSTEM_PROMPT, VOICE_SYSTEM_PROMPT, Priority, Recommendation
 from src.analysis.engine_monitor import AlertSeverity, EngineAlert
 from src.analysis.input_analyzer import CornerInputDelta, format_input_detail
 from src.analysis.models import CornerDelta
@@ -169,3 +169,80 @@ class RaceEngineerAdvisor:
         )
         self._remember(corner_losses)
         return result
+
+    async def answer_question(
+        self,
+        question: str,
+        *,
+        track: TrackInfo,
+        lap: Lap | None = None,
+        corner_losses: list[CornerDelta] | None = None,
+        input_deltas: list[CornerInputDelta] | None = None,
+        tyre_report: TyreThermalReport | None = None,
+        engine_alerts: list[EngineAlert] | None = None,
+    ) -> str:
+        """Answer a driver's spoken (transcribed) question in one short reply.
+
+        Used by the voice assistant (:mod:`src.voice`): reuses this same local
+        LLM integration rather than a second model, with the same heuristic
+        fallback discipline as :meth:`advise`. Returns plain text meant to be
+        read aloud by TTS - no corner-tag formatting, no lists.
+
+        Does not update the per-corner trend memory (:meth:`_remember`) -
+        that happens exactly once per lap, in :meth:`advise`, to avoid a
+        question asked mid-lap skewing the next lap's improving/regressing
+        comparison.
+        """
+        trends = self._corner_trends(corner_losses)
+        if self._llm is not None:
+            context = build_question_context(
+                question,
+                track=track,
+                lap=lap,
+                corner_losses=corner_losses,
+                input_deltas=input_deltas,
+                tyre_report=tyre_report,
+                engine_alerts=engine_alerts,
+                corner_trends=trends,
+            )
+            try:
+                reply = await self._llm.complete(VOICE_SYSTEM_PROMPT, context)
+                if reply.strip():
+                    return reply.strip()
+            except Exception:  # noqa: BLE001 - any LLM failure falls back to heuristics
+                _log.warning(
+                    "voice-llm-failed", action="fallback-to-heuristic", exc_info=True
+                )
+
+        return self._heuristic_answer(
+            corner_losses=corner_losses,
+            input_deltas=input_deltas,
+            track_length_m=track.length_m,
+            tyre_report=tyre_report,
+            engine_alerts=engine_alerts,
+            corner_trends=trends,
+        )
+
+    def _heuristic_answer(
+        self,
+        *,
+        corner_losses: list[CornerDelta] | None,
+        input_deltas: list[CornerInputDelta] | None,
+        track_length_m: float,
+        tyre_report: TyreThermalReport | None,
+        engine_alerts: list[EngineAlert] | None,
+        corner_trends: dict[str, str] | None,
+    ) -> str:
+        """Deterministic spoken-style fallback when no LLM is available/working."""
+        recommendations = self.heuristic_advice(
+            corner_losses=corner_losses,
+            input_deltas=input_deltas,
+            track_length_m=track_length_m,
+            tyre_report=tyre_report,
+            engine_alerts=engine_alerts,
+            corner_trends=corner_trends,
+        )
+        if not recommendations:
+            return "Not enough data yet - complete a few more laps and ask again."
+        # Speak the single highest-priority item; a list read aloud is unusable.
+        return recommendations[0].message

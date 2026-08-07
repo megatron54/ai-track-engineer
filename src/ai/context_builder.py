@@ -5,6 +5,13 @@ cheap recommendations: the model should receive exactly the signals an engineer
 would look at (lap time, biggest time losses by corner, *why* each one was
 lost - brake point, throttle point, steering corrections - tyre state, and
 engine alerts) and nothing else.
+
+Two entry points share the same analysis section:
+
+- :func:`build_lap_context` - automatic post-lap coaching.
+- :func:`build_question_context` - a driver's spoken (transcribed) question,
+  for the voice assistant (see :mod:`src.voice`), which reuses this same
+  local LLM integration rather than a second model.
 """
 
 from __future__ import annotations
@@ -17,28 +24,17 @@ from src.knowledge.models import TrackInfo
 from src.processing.models import Lap
 
 
-def build_lap_context(
+def _analysis_lines(
     *,
-    lap: Lap,
     track: TrackInfo,
-    corner_losses: list[CornerDelta] | None = None,
-    input_deltas: list[CornerInputDelta] | None = None,
-    tyre_report: TyreThermalReport | None = None,
-    engine_alerts: list[EngineAlert] | None = None,
-    corner_trends: dict[str, str] | None = None,
-) -> str:
-    """Compose a structured text summary of a lap for the LLM."""
+    corner_losses: list[CornerDelta] | None,
+    input_deltas: list[CornerInputDelta] | None,
+    tyre_report: TyreThermalReport | None,
+    engine_alerts: list[EngineAlert] | None,
+    corner_trends: dict[str, str] | None,
+) -> list[str]:
+    """The analysis section shared by lap coaching and question contexts."""
     lines: list[str] = []
-    lines.append(f"Track: {track.name} ({track.corner_count} corners)")
-    lines.append(
-        f"Lap {lap.lap_number}: {lap.lap_time_seconds:.3f}s "
-        f"({'valid' if lap.valid else 'INVALID'})"
-    )
-    if lap.sector_times_ms:
-        sectors = ", ".join(
-            f"S{i + 1} {ms / 1000:.3f}s" for i, ms in enumerate(lap.sector_times_ms)
-        )
-        lines.append(f"Sectors: {sectors}")
 
     if corner_losses:
         lines.append("Biggest time losses vs reference:")
@@ -68,4 +64,83 @@ def build_lap_context(
         alerts = ", ".join(f"{alert.kind}@{alert.rpm}rpm" for alert in engine_alerts)
         lines.append(f"Engine alerts: {alerts}")
 
+    return lines
+
+
+def build_lap_context(
+    *,
+    lap: Lap,
+    track: TrackInfo,
+    corner_losses: list[CornerDelta] | None = None,
+    input_deltas: list[CornerInputDelta] | None = None,
+    tyre_report: TyreThermalReport | None = None,
+    engine_alerts: list[EngineAlert] | None = None,
+    corner_trends: dict[str, str] | None = None,
+) -> str:
+    """Compose a structured text summary of a lap for the LLM."""
+    lines: list[str] = [f"Track: {track.name} ({track.corner_count} corners)"]
+    lines.append(
+        f"Lap {lap.lap_number}: {lap.lap_time_seconds:.3f}s "
+        f"({'valid' if lap.valid else 'INVALID'})"
+    )
+    if lap.sector_times_ms:
+        sectors = ", ".join(
+            f"S{i + 1} {ms / 1000:.3f}s" for i, ms in enumerate(lap.sector_times_ms)
+        )
+        lines.append(f"Sectors: {sectors}")
+
+    lines.extend(
+        _analysis_lines(
+            track=track,
+            corner_losses=corner_losses,
+            input_deltas=input_deltas,
+            tyre_report=tyre_report,
+            engine_alerts=engine_alerts,
+            corner_trends=corner_trends,
+        )
+    )
+    return "\n".join(lines)
+
+
+def build_question_context(
+    question: str,
+    *,
+    track: TrackInfo,
+    lap: Lap | None = None,
+    corner_losses: list[CornerDelta] | None = None,
+    input_deltas: list[CornerInputDelta] | None = None,
+    tyre_report: TyreThermalReport | None = None,
+    engine_alerts: list[EngineAlert] | None = None,
+    corner_trends: dict[str, str] | None = None,
+) -> str:
+    """Compose a context block for a driver's spoken question (voice assistant).
+
+    Shares the same analysis section as :func:`build_lap_context`, but is not
+    tied to a just-completed lap - a question can arrive mid-session (e.g.
+    "how are my tyres?") with only the latest known state available.
+    """
+    lines: list[str] = [f"Track: {track.name} ({track.corner_count} corners)"]
+    if lap is not None:
+        lines.append(
+            f"Most recent lap {lap.lap_number}: {lap.lap_time_seconds:.3f}s "
+            f"({'valid' if lap.valid else 'INVALID'})"
+        )
+    else:
+        lines.append("No completed lap yet this session.")
+
+    lines.extend(
+        _analysis_lines(
+            track=track,
+            corner_losses=corner_losses,
+            input_deltas=input_deltas,
+            tyre_report=tyre_report,
+            engine_alerts=engine_alerts,
+            corner_trends=corner_trends,
+        )
+    )
+    # Collapse interior whitespace (including newlines) so a transcribed
+    # question can't inject pseudo-structured lines that mimic this
+    # line-oriented context format (e.g. a fake "Engine alerts: ..." line).
+    sanitized_question = " ".join(question.split())
+    lines.append(f'Driver asked: "{sanitized_question}"')
     return "\n".join(lines)

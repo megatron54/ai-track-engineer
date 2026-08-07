@@ -200,3 +200,62 @@ async def test_advise_passes_corner_trend_into_llm_context() -> None:
         corner_losses=[CornerDelta(corner_index=1, corner_name="T1", delta_s=0.10)],
     )
     assert "improving" in captured["user"]
+
+
+async def test_answer_question_uses_llm_when_available() -> None:
+    llm = _FakeLLM(reply="Tyres are in the window, keep pushing.")
+    advisor = RaceEngineerAdvisor(llm)
+    reply = await advisor.answer_question("how are my tyres?", track=_TRACK)
+    assert reply == "Tyres are in the window, keep pushing."
+    assert llm.calls == 1
+
+
+async def test_answer_question_falls_back_to_heuristic_on_llm_error() -> None:
+    llm = _FakeLLM(fail=True)
+    advisor = RaceEngineerAdvisor(llm)
+    losses = [CornerDelta(corner_index=1, corner_name="T1", delta_s=0.5)]
+    reply = await advisor.answer_question("what's slow?", track=_TRACK, corner_losses=losses)
+    assert "T1" in reply
+
+
+async def test_answer_question_without_llm_uses_heuristic() -> None:
+    advisor = RaceEngineerAdvisor()
+    losses = [CornerDelta(corner_index=1, corner_name="T1", delta_s=0.5)]
+    reply = await advisor.answer_question("what's slow?", track=_TRACK, corner_losses=losses)
+    assert "T1" in reply
+
+
+async def test_answer_question_with_no_data_says_so() -> None:
+    advisor = RaceEngineerAdvisor()
+    reply = await advisor.answer_question("how am I doing?", track=_TRACK)
+    assert "not enough data" in reply.lower()
+
+
+async def test_answer_question_does_not_affect_advise_trend_memory() -> None:
+    # Asking a question mid-session must not pollute the per-lap trend memory
+    # that advise() maintains.
+    advisor = RaceEngineerAdvisor()
+    losses = [CornerDelta(corner_index=1, corner_name="T1", delta_s=0.40)]
+    await advisor.answer_question("what's slow?", track=_TRACK, corner_losses=losses)
+    recs = await advisor.advise(lap=_LAP, track=_TRACK, corner_losses=losses)
+    assert not any("improving" in r.message or "regressing" in r.message for r in recs)
+
+
+async def test_answer_question_passes_question_and_data_into_llm_context() -> None:
+    captured: dict[str, str] = {}
+
+    class _CapturingLLM:
+        async def complete(self, system: str, user: str) -> str:
+            captured["system"] = system
+            captured["user"] = user
+            return "All good back there."
+
+    advisor = RaceEngineerAdvisor(_CapturingLLM())
+    losses = [CornerDelta(corner_index=1, corner_name="T1", delta_s=0.30)]
+    reply = await advisor.answer_question(
+        "how's turn one?", track=_TRACK, corner_losses=losses
+    )
+    assert reply == "All good back there."
+    assert 'Driver asked: "how\'s turn one?"' in captured["user"]
+    assert "T1: +0.300s" in captured["user"]
+    assert captured["system"] != ""
