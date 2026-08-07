@@ -79,6 +79,7 @@ async def _publish_ai_advice(
         lap=report.lap,
         track=track,
         corner_losses=list(report.corner_losses),
+        input_deltas=list(report.input_deltas),
         tyre_report=report.tyre_report,
         engine_alerts=list(report.engine_alerts),
     )

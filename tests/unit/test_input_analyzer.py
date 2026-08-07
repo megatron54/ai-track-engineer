@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from src.analysis.input_analyzer import (
+    CornerInputDelta,
     compare_corner_inputs,
     corner_input_profile,
+    format_input_detail,
 )
 from src.knowledge.models import Corner
 from src.processing.lap_trace import LapTrace
@@ -112,3 +114,44 @@ def test_compare_corner_inputs_against_itself_is_zero() -> None:
 def test_position_delta_helpers_return_none_without_a_track_length() -> None:
     delta = compare_corner_inputs(_worse_trace(), _reference_trace(), _CORNER)
     assert delta.brake_point_delta_m(0.0) is None
+
+
+def _delta(**overrides: object) -> CornerInputDelta:
+    base: dict[str, object] = {
+        "corner_index": 1,
+        "corner_name": "T1",
+        "brake_point_delta": None,
+        "throttle_point_delta": None,
+        "trail_braking_overlap_delta": 0.0,
+        "steering_reversals_delta": 0,
+    }
+    base.update(overrides)
+    return CornerInputDelta(**base)  # type: ignore[arg-type]
+
+
+def test_format_input_detail_reports_later_brake_point() -> None:
+    detail = format_input_detail(_delta(brake_point_delta=0.01), 1000.0)
+    assert detail == "braked 10m later"
+
+
+def test_format_input_detail_reports_earlier_brake_point() -> None:
+    detail = format_input_detail(_delta(brake_point_delta=-0.01), 1000.0)
+    assert detail == "braked 10m earlier"
+
+
+def test_format_input_detail_reports_throttle_point() -> None:
+    detail = format_input_detail(_delta(throttle_point_delta=0.02), 1000.0)
+    assert detail == "throttle 20m later"
+
+
+def test_format_input_detail_combines_multiple_signals() -> None:
+    detail = format_input_detail(
+        _delta(brake_point_delta=0.01, steering_reversals_delta=2), 1000.0
+    )
+    assert detail == "braked 10m later, +2 steering corrections"
+
+
+def test_format_input_detail_none_when_nothing_reportable() -> None:
+    # Deltas exist but are below the minimum reportable distance.
+    assert format_input_detail(_delta(brake_point_delta=0.0001), 1000.0) is None
+    assert format_input_detail(_delta(), 1000.0) is None

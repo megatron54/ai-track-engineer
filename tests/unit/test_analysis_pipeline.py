@@ -76,6 +76,25 @@ def test_recommendations_are_present_when_issues_exist() -> None:
     assert any(r.recommendations for r in reports)
 
 
+def test_input_deltas_match_corner_losses_when_present() -> None:
+    # Whenever a lap has corner_losses (time was lost somewhere vs the best),
+    # it should carry a matching input_deltas entry (the "why") for each one -
+    # same corners, same order.
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
+    reports = _run_pipeline(pipeline, frames=120)
+    for report in reports:
+        assert len(report.input_deltas) == len(report.corner_losses)
+        assert [d.corner_name for d in report.input_deltas] == [
+            loss.corner_name for loss in report.corner_losses
+        ]
+
+
+def test_input_deltas_empty_without_reference_lap() -> None:
+    pipeline = AnalysisPipeline(_TRACK, min_lap_time_ms=0)
+    reports = _run_pipeline(pipeline, frames=100)
+    assert reports[0].input_deltas == ()
+
+
 def _pipeline_with_reference() -> AnalysisPipeline:
     """Run the mock until the pipeline has a personal-best reference lap."""
     source = MockTelemetrySource(dt=0.05, lap_time_s=1.0)

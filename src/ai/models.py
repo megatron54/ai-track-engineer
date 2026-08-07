@@ -42,6 +42,8 @@ transfer.
 number), the concrete speed and the exact point.
 - If you do not have enough data for concrete advice, do NOT invent it. Say you \
 need more laps.
+- If a corner is marked [improving] or [regressing] vs the last lap, acknowledge \
+it briefly before the instruction (e.g. "Improving in Turn 4 - now...").
 - Format: "[Corner X] Concrete action -> expected result (estimated delta)".
 - Priority: 1) Braking 2) Line 3) Throttle application 4) Consistency.
 """
