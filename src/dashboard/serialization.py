@@ -1,10 +1,12 @@
 """Serialise domain objects into dashboard event envelopes.
 
-Three event types flow to the browser over the WebSocket:
+Event types that flow to the browser over the WebSocket:
 
 * ``session`` - sent once when a session loads (track, car, corners, map params).
 * ``telemetry`` - per-frame state (speed, rpm, inputs, position, live delta).
 * ``lap`` - emitted when a lap completes (time, sectors, personal best, advice).
+* ``pattern`` - multi-lap trends (worst corners, consistency/pace direction).
+* ``session_report`` - cumulative session summary (best/average/theoretical best).
 
 Keeping these builders pure makes the wire format easy to test and evolve.
 """
@@ -13,7 +15,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from src.analysis.pattern_detector import PatternReport
 from src.analysis.pipeline import LapReport
+from src.analysis.session_report import SessionReport
 from src.knowledge.models import TrackInfo
 from src.telemetry.models import TelemetryFrame
 
@@ -99,6 +103,38 @@ def lap_event(report: LapReport) -> dict[str, Any]:
             for loss in report.corner_losses
         ],
         "advice": [rec.message for rec in report.recommendations],
+    }
+
+
+def pattern_event(report: PatternReport) -> dict[str, Any]:
+    """Build the ``pattern`` envelope for a multi-lap pattern report."""
+    return {
+        "type": "pattern",
+        "worst_corners": [
+            {
+                "corner": pattern.corner_name,
+                "occurrences": pattern.occurrences,
+                "avg_delta_s": pattern.avg_delta_s,
+                "trend": pattern.trend,
+            }
+            for pattern in report.worst_corners
+        ],
+        "consistency_trend": report.consistency_trend,
+        "lap_time_trend": report.lap_time_trend,
+    }
+
+
+def session_report_event(report: SessionReport) -> dict[str, Any]:
+    """Build the ``session_report`` envelope for a cumulative session summary."""
+    return {
+        "type": "session_report",
+        "total_laps": report.total_laps,
+        "valid_laps": report.valid_laps,
+        "best_lap_ms": report.best_lap_ms,
+        "average_lap_ms": report.average_lap_ms,
+        "consistency_stdev_ms": report.consistency_stdev_ms,
+        "improvement_ms": report.improvement_ms,
+        "theoretical_best_ms": report.theoretical_best_ms,
     }
 
 

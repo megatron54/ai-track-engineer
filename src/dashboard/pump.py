@@ -13,13 +13,23 @@ from typing import Any
 
 from src.ai.advisor import RaceEngineerAdvisor
 from src.analysis.engine_monitor import EngineMonitor
+from src.analysis.models import CornerDelta
+from src.analysis.pattern_detector import detect_patterns
 from src.analysis.pipeline import AnalysisPipeline, LapReport
+from src.analysis.session_report import build_session_report
 from src.dashboard.hub import TelemetryHub
-from src.dashboard.serialization import lap_event, session_event, telemetry_event
+from src.dashboard.serialization import (
+    lap_event,
+    pattern_event,
+    session_event,
+    session_report_event,
+    telemetry_event,
+)
 from src.dashboard.state import DashboardState
 from src.knowledge.models import TrackInfo
 from src.processing.corner_coach import CornerCoach
 from src.processing.message_queue import MessagePriority, MessageQueue, PriorityMessage
+from src.processing.models import Lap
 from src.storage.session_recorder import SessionRecorder
 from src.storage.sqlite_client import SqliteStore
 from src.strategy.fuel_strategy import FuelStrategy
@@ -30,6 +40,10 @@ from src.strategy.tyre_strategy import TyreStrategy
 from src.telemetry.models import ACStaticInfo
 from src.telemetry.shm_structs import ACSessionType
 from src.telemetry.source import TelemetrySource
+
+# A corner needs at least this many recorded losses across the session before
+# it is reported as a recurring pattern (avoids noisy one-off blips).
+_PATTERN_MIN_OCCURRENCES = 3
 
 
 def _mode_event(session_type: ACSessionType) -> dict[str, Any]:
@@ -135,6 +149,11 @@ async def run_session(
     messages_this_lap = 0
     last_message_lap = -1
 
+    # Multi-lap history for pattern detection and the cumulative session
+    # report. Kept local to the session so it resets naturally on restart.
+    laps_history: list[Lap] = []
+    corner_deltas_history: list[list[CornerDelta]] = []
+
     advice_tasks: set[asyncio.Task[None]] = set()
     frames = 0
     try:
@@ -180,6 +199,28 @@ async def run_session(
                 recorder.write(frame, delta=delta)
             if report is not None:
                 hub.publish(lap_event(report))
+
+                # Accumulate multi-lap history and publish the cumulative
+                # session report + any detected patterns (Fase 0: these
+                # analyses already existed but were never wired to the live
+                # dashboard).
+                laps_history.append(report.lap)
+                if report.lap.valid:
+                    corner_deltas_history.append(list(report.corner_losses))
+                hub.publish(session_report_event(build_session_report(laps_history)))
+                valid_times_s = [
+                    lap.lap_time_ms / 1000.0 for lap in laps_history if lap.valid
+                ]
+                if len(valid_times_s) >= _PATTERN_MIN_OCCURRENCES:
+                    hub.publish(
+                        pattern_event(
+                            detect_patterns(
+                                corner_deltas_history,
+                                valid_times_s,
+                                min_occurrences=_PATTERN_MIN_OCCURRENCES,
+                            )
+                        )
+                    )
 
                 # Per-lap strategy updates.
                 fuel.record_lap_fuel(frame.physics.fuel)
