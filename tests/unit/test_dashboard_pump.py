@@ -165,6 +165,40 @@ def test_should_deliver_silences_low_priority_in_qualifying() -> None:
     assert _should_deliver(quali, _coaching_message(MessagePriority.HIGH), 0) is True
 
 
+async def test_run_session_publishes_session_report_every_lap() -> None:
+    source = MockTelemetrySource(dt=0.05, lap_time_s=1.0)
+    static = source.connect()
+    hub = TelemetryHub(queue_size=5000)
+    state = DashboardState()
+    queue = hub.subscribe()
+
+    await run_session(source, hub, state, _TRACK, static, hz=4000, max_frames=80)
+
+    reports = [m for m in _drain(queue) if m["type"] == "session_report"]
+    assert len(reports) >= 2
+    assert reports[-1]["total_laps"] >= reports[0]["total_laps"]
+
+
+async def test_run_session_publishes_pattern_after_enough_valid_laps() -> None:
+    # A lap must clear the segmenter's 60s "impossibly short lap" floor to be
+    # marked valid, so patterns (which only count valid laps) need laps at or
+    # above that threshold. A coarse dt keeps the frame count (and test time)
+    # small while still crossing that floor several times.
+    source = MockTelemetrySource(dt=0.5, lap_time_s=61.0)
+    static = source.connect()
+    hub = TelemetryHub(queue_size=20000)
+    state = DashboardState()
+    queue = hub.subscribe()
+
+    await run_session(source, hub, state, _TRACK, static, hz=4000, max_frames=500)
+
+    patterns = [m for m in _drain(queue) if m["type"] == "pattern"]
+    assert patterns, "expected at least one pattern event once 3+ valid laps completed"
+    for pattern in patterns:
+        assert pattern["consistency_trend"] in {"improving", "stable", "regressing"}
+        assert pattern["lap_time_trend"] in {"improving", "stable", "regressing"}
+
+
 async def test_run_session_publishes_mode_event() -> None:
     source = MockTelemetrySource()
     static = source.connect()
