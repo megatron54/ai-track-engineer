@@ -144,6 +144,7 @@ td.inv{color:var(--bad)}
         <table><thead><tr><th>#</th><th>Time</th><th>Gap</th><th>S1</th><th>S2</th><th>S3</th></tr></thead>
         <tbody id="laprows"><tr><td colspan="6" class="muted">No completed laps yet</td></tr></tbody></table>
       </div>
+      <div class="pad" id="sessionReport" style="border-top:1px solid var(--border);font-size:var(--fs-mono);color:var(--dim)"></div>
     </div>
   </div>
   <!-- CENTER: driving -->
@@ -296,7 +297,19 @@ function onAdvice(d){if(!d.messages||!d.messages.length)return;const c=document.
 function onStrategy(d){const c=document.createElement("div");c.className="card strategy";c.innerHTML=`<div class="hd"><b>Strategy · Lap ${d.lap}</b></div><div class="body">${d.fuel.message}</div><div class="body">${d.tyres.message}</div><div class="body">${d.pit.message}</div>`;feed(c)}
 function onCoaching(d){const c=document.createElement("div");c.className="card coaching";c.innerHTML=`<div class="body">${d.text}</div>`;feed(c)}
 function onMode(d){const e=$("emode");e.textContent=d.mode.toUpperCase();e.title=`${d.priority} — ${d.personality}`}
-ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching,mode:onMode}[d.type]||(()=>{}))(d)};
+function onPattern(d){
+  if(!d.worst_corners||!d.worst_corners.length)return;
+  const rows=d.worst_corners.map(p=>`${p.corner} +${p.avg_delta_s.toFixed(2)}s (${p.trend}, x${p.occurrences})`).join("<br/>");
+  const c=document.createElement("div");c.className="card ai";
+  c.innerHTML=`<div class="hd"><b>Patterns</b><span>pace ${d.lap_time_trend} · consistency ${d.consistency_trend}</span></div><div class="body">${rows}</div>`;
+  feed(c);
+}
+function onSessionReport(d){
+  const best=fmt(d.best_lap_ms),avg=d.average_lap_ms?fmt(d.average_lap_ms):"-:--.---";
+  const el=document.getElementById("sessionReport");
+  if(el)el.textContent=`${d.valid_laps}/${d.total_laps} valid · best ${best} · avg ${avg}`;
+}
+ws.onmessage=e=>{const d=JSON.parse(e.data);({session:onSession,telemetry:onTelemetry,lap:onLap,advice:onAdvice,strategy:onStrategy,coaching:onCoaching,mode:onMode,pattern:onPattern,session_report:onSessionReport}[d.type]||(()=>{}))(d)};
 setTimeout(()=>{mdpr=fit(mapCv);tdpr=fit(trCv);drawMap();drawTrace()},80);
 </script>
 </body>
