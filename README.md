@@ -1,7 +1,8 @@
 # AI-TrackEngineer
 
 > An AI-powered race engineer for Assetto Corsa — real-time telemetry, lap-by-lap
-> analysis, a physics-based Setup Lab, and a bidirectional voice assistant.
+> analysis, a physics-based Setup Lab, and a voice assistant (in design, see the
+> roadmap below).
 
 [![CI](https://github.com/megatron54/ai-track-engineer/actions/workflows/ci.yml/badge.svg)](https://github.com/megatron54/ai-track-engineer/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -23,7 +24,7 @@ and delivers intelligent feedback through a web dashboard and a local AI enginee
 | 2 | Per-corner analysis + lap comparison + tyre/engine monitors | ✅ Done |
 | 3 | Natural-language coaching (local LLM via Ollama) | ✅ Done |
 | 4 | Real-time in-corner feedback | ✅ Done (accurate live delta + corner coach, mode-aware) |
-| 5 | Pattern detection + session reports | ✅ Session reports (patterns pending) |
+| 5 | Pattern detection + session reports | ✅ Done (live on the dashboard: worst-corner trends + cumulative session report every lap) |
 | 6 | Bidirectional voice assistant | ⏳ Planned |
 | 7 | Predictive ML models | ✅ Corner-time predictor (trained on real laps) |
 | 8 | Race strategist (fuel, pit, tyres) | 🚧 Fuel + tyre + pit live (opponent gaps / overcut-undercut pending) |
@@ -90,6 +91,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow.
 ## Documentation
 
 - [Project plan & architecture](docs/AI-TrackEngineer-Plan.md)
+- [Deep-dive review, weaknesses and roadmap](docs/DEEP-DIVE-ROADMAP.md)
 - [Contributing guide](CONTRIBUTING.md)
 
 ## License
