@@ -159,21 +159,16 @@ Objetivo: sacar valor de código que ya existe, sin escribir lógica nueva.
 3. ✅ **README actualizado** para reflejar que la Fase 5 (patrones + informes de sesión) ya está completa en vivo, no solo por CLI, y se enlaza este documento desde el README.
 4. Tests añadidos: `test_run_session_publishes_session_report_every_lap`, `test_run_session_publishes_pattern_after_enough_valid_laps` en `tests/unit/test_dashboard_pump.py`. Cobertura de la suite completa: 97%.
 
-### Fase 1 — Análisis de inputs de conducción (el core, 1-2 semanas) — siguiente en la cola
+### Fase 1 — Análisis de inputs de conducción (el core, 1-2 semanas) — ✅ COMPLETADA
 
 Esto es lo más valioso y lo que desbloquea IA y frontend después.
 
-1. **Extender `LapTrace` (`processing/lap_trace.py`)** para exponer, además de `time_at`/`speed_at`, series indexadas por posición de: `brake_at(position)`, `throttle_at(position)`, `steer_at(position)`. Ya se capturan en `TelemetryFrame` — es solo exponerlas igual que `speed_at`.
-2. **Nuevo módulo `analysis/input_analyzer.py`** (o extender `lap_comparator.py`) con funciones puras y testeables:
-   - `brake_point(trace, corner) -> float` — posición donde `brake` cruza un umbral (p. ej. 10%) antes de la entrada de curva.
-   - `throttle_application(trace, corner) -> ThrottleProfile` — posición de reapertura de gas tras el ápex + pendiente (rápida vs progresiva).
-   - `trail_braking_overlap(trace, corner) -> float` — proporción de la frenada que se solapa con volante activo.
-   - `steering_smoothness(trace, corner) -> float` — nº de cambios de signo/derivada alta en el ángulo de volante dentro de la curva (proxy de correcciones).
-   - `apex_speed_delta(trace, reference, corner) -> float` — comparación de velocidad mínima real, no solo al final del segmento.
-3. **Actualizar `CornerCoach._post_corner`/`_brake_check`** (`processing/corner_coach.py`) para usar estos datos: en vez de "perdiste 0.3s en T4", generar "frenaste en el metro X (Ym más tarde que tu mejor vuelta), perdiste 0.12s solo en el punto de frenada".
-4. **Tests con datos sintéticos**: generar traces artificiales (frenada tardía, sub/sobre-viraje simulado) en `tests/unit/test_lap_trace.py` / nuevo `test_input_analyzer.py`, sin necesidad de conducir. `MockTelemetrySource` puede extenderse para inyectar patrones de conducción controlados (buena vuelta vs vuelta con frenada tardía a propósito) y así validar visualmente el pipeline entero sin AC abierto.
+1. ✅ **`LapTrace` extendida** (`processing/lap_trace.py`) con `brake_at`/`throttle_at`/`steer_at` (interpolación por posición, igual que `speed_at`), más `first_crossing`, `trail_braking_overlap` y `steering_reversals` como primitivas reutilizables (wrap-aware, para curvas que cruzan la línea de meta). Retrocompatible: los samples de 3 valores (posición, tiempo, velocidad) siguen funcionando, con freno/gas/volante a 0.0 por defecto.
+2. ✅ **Nuevo módulo `analysis/input_analyzer.py`** con `corner_input_profile()` (punto de frenada, punto de reapertura de gas, solape de trail-braking, correcciones de volante para una vuelta) y `compare_corner_inputs()` (delta de cada métrica entre la vuelta actual y la de referencia, con conversión a metros vía `brake_point_delta_m`/`throttle_point_delta_m`). Nota: no se implementó `apex_speed_delta` explícito porque `speed_at()` ya permite ese cálculo directamente donde haga falta — no se justificaba una función adicional todavía.
+3. ✅ **`CornerCoach` actualizado**: mantiene un buffer reciente de `(posición, tiempo, velocidad, freno, gas, volante)` y, al salir de una curva, reconstruye una traza parcial y la compara contra la referencia. El mensaje de coaching ahora es, por ejemplo, `"[T4] lost 0.18s vs best — braked 12m later, +1 steering correction"` en vez de solo `"[T4] lost 0.18s vs best"`. Degrada con elegancia (sin el detalle) cuando no hay suficientes datos de freno/gas para esa curva.
+4. ✅ **Tests con datos sintéticos**: `test_lap_trace.py` (crossing, wraparound, trail braking, reversals), `test_input_analyzer.py` (perfil de curva, comparación, conversión a metros), `test_corner_coach.py` (mensaje enriquecido y fallback sin señal de input) — todo sin conducir, con traces construidas a mano. Suite completa: 308 tests, 97% cobertura.
 
-### Fase 2 — Enriquecer el motor de IA (3-5 días, depende de Fase 1)
+### Fase 2 — Enriquecer el motor de IA (3-5 días, depende de Fase 1) — siguiente en la cola
 
 1. **Reescribir `context_builder.build_lap_context`** para incluir, por cada corner_loss, el desglose de Fase 1 (punto de frenada, delta de ápex, perfil de gas). El prompt ya pide esto — solo falta dárselo.
 2. **Memoria corta de sesión**: mantener las últimas N recomendaciones dadas (por curva) en `RaceEngineerAdvisor` para: (a) no repetir el mismo consejo vuelta tras vuelta si no ha habido cambio, (b) felicitar cuando el driver corrige algo señalado antes ("Mejoraste 0.15s en T4 tras el consejo anterior").
@@ -231,8 +226,8 @@ Para cada uno, tomar una decisión explícita en vez de dejarlo indefinido:
 ## 5. Priorización sugerida (orden de ejecución)
 
 1. ✅ Fase 0 (quick wins) — completada.
-2. Fase 1 (análisis de inputs) — el corazón del producto, hazlo bien antes de tocar IA, voz o frontend en profundidad. **Siguiente paso de trabajo.**
-3. Fase 2 (IA) — depende directamente de Fase 1, es relativamente rápida una vez el dato existe.
+2. ✅ Fase 1 (análisis de inputs) — completada.
+3. Fase 2 (IA) — depende directamente de Fase 1, es relativamente rápida una vez el dato existe. **Siguiente paso de trabajo.**
 4. Fase 2.5 (voz) — depende de que el advisor responda bien a texto (Fase 2); no bloquea ni bloquea al frontend, puede solaparse con la Fase 3.
 5. Fase 3 (frontend) — puede arrancar en paralelo a Fase 1/2/2.5 en cuanto el contrato WebSocket esté congelado (punto 1 de Fase 3), usando datos mock mientras las demás avanzan.
 6. Fase 4 (módulos dormidos) — decisión de producto, no bloquea nada, puede ir intercalada.
